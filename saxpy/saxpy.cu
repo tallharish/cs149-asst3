@@ -171,8 +171,13 @@ void printCudaInfo()
         printf("   maxThreadsDim:   %d %d %d\n", thread_dim[0], thread_dim[1], thread_dim[2]);
         printf("   Warp Size:   %d\n", deviceProps.warpSize);
         printf("   Clock Rate:   %d\n", deviceProps.clockRate);
-        printf("   memoryClockRate Rate:   %d\n", deviceProps.memoryClockRate);
-        printf("   multiProcessorCount Rate:   %d\n", deviceProps.multiProcessorCount);
+        printf("   memoryClockRate:   %d\n", deviceProps.memoryClockRate);
+        printf("   multiProcessorCount:   %d\n", deviceProps.multiProcessorCount);
+        printf("   memoryBusWidth:   %d\n", deviceProps.memoryBusWidth);
+        printf("   computeMode:   %d\n", deviceProps.computeMode);
+        printf("   canMapHostMemory:   %d\n", deviceProps.canMapHostMemory);
+        printf("   memPitch:   %.0f MB \n", static_cast<float>(deviceProps.memPitch) / (1024 * 1024));
+        printf("   totalConstMem:   %.0f\n", static_cast<float>(deviceProps.totalConstMem) / (1024 * 1024));
     }
     printf("---------------------------------------------------------\n");
 }
