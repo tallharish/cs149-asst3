@@ -64,6 +64,12 @@ __global__ void downsweep_kernel(int* result, int two_d, int two_dplus1, int N) 
 
 }
 
+__global__ void set_last_zero_kernel(int* result, int N) {
+    if (blockIdx.x == 0 && threadIdx.x == 0) {
+        result[N - 1] == 0;
+    }
+}
+
 void exclusive_scan(int* input, int N, int* result)
 {
 
@@ -86,7 +92,6 @@ void exclusive_scan(int* input, int N, int* result)
 
     int block_size = 32;
 
-
     // upsweep phase
     for (int two_d = 1;  two_d <= N / 2; two_d *= 2) {
         int two_dplus1 = 2 * two_d;
@@ -104,7 +109,10 @@ void exclusive_scan(int* input, int N, int* result)
     }
 
     // cudaMemcpy(result, device_result, N * sizeof(int), cudaMemcpyDeviceToHost);
-    result[N - 1] = 0; //TODO: maybe move this into one of the kernel function?
+    
+    set_last_zero_kernel<<<1, 1>>>(result, N);
+    cudaDeviceSynchronize();
+
     // cudaMemcpy(device_result, result, N * sizeof(int), cudaMemcpyHostToDevice);
 
     // downsweep phase
