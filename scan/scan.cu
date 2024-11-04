@@ -79,21 +79,28 @@ void exclusive_scan(int* input, int N, int* result)
     memmove(result, input, N * sizeof(int));
 
     int* device_result;
-    cudaMalloc(&device_result, N * sizeof(int));
+    cudaError_t malloc_return_code = cudaMalloc(&device_result, N * sizeof(int));
+    assert(malloc_return_code == cudaSuccess);
+
     cudaMemcpy(device_result, result, N * sizeof(int), cudaMemcpyHostToDevice);
 
     int block_size = 32;
 
 
     // upsweep phase
-    for (int two_d = 1;  two_d <= N / 2; two_d *+ 2) {
+    for (int two_d = 1;  two_d <= N / 2; two_d *= 2) {
         int two_dplus1 = 2 * two_d;
         
         int num_index = N / two_dplus1 + 1;
         int grid_size = (num_index + block_size - 1) / block_size;
         
         upsweep_kernel<<<grid_size, block_size>>>(device_result, two_d, two_dplus1, N);
+        
         cudaDeviceSynchronize();
+        cudaError_t kernel_return_code = cudaGetLastError();
+        if (kernel_return_code != cudaSuccess) {
+            printf("%s\n", cudaGetErrorString(kernel_return_code));
+        }
     }
 
     cudaMemcpy(result, device_result, N * sizeof(int), cudaMemcpyDeviceToHost);
@@ -109,6 +116,10 @@ void exclusive_scan(int* input, int N, int* result)
 
         downsweep_kernel<<<grid_size, block_size>>>(device_result, two_d, two_dplus1, N);
         cudaDeviceSynchronize();
+        cudaError_t kernel_return_code = cudaGetLastError();
+        if (kernel_return_code != cudaSuccess) {
+            printf("%s\n", cudaGetErrorString(kernel_return_code));
+        }
 
     }
     cudaMemcpy(result, device_result, N * sizeof(int), cudaMemcpyDeviceToHost);
