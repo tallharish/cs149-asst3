@@ -4,6 +4,7 @@
 #include <cuda_runtime.h>
 #include <driver_functions.h>
 
+#include "iostream"
 #include "CycleTimer.h"
 
 // return GB/sec
@@ -163,6 +164,15 @@ void printCudaInfo()
         printf("   Global mem: %.0f MB\n",
                static_cast<float>(deviceProps.totalGlobalMem) / (1024 * 1024));
         printf("   CUDA Cap:   %d.%d\n", deviceProps.major, deviceProps.minor);
+        printf("   maxThreadsPerBlock:   %d\n", deviceProps.maxThreadsPerBlock);
+        printf("   maxThreadsPerMultiProcessor:   %d\n", deviceProps.maxThreadsPerMultiProcessor);
+        printf("   maxBlocksPerMultiProcessor:   %d\n", deviceProps.maxBlocksPerMultiProcessor);
+        int *thread_dim = deviceProps.maxThreadsDim;
+        printf("   maxThreadsDim:   %d %d %d\n", thread_dim[0], thread_dim[1], thread_dim[2]);
+        printf("   Warp Size:   %d\n", deviceProps.warpSize);
+        printf("   Clock Rate:   %d\n", deviceProps.clockRate);
+        printf("   memoryClockRate Rate:   %d\n", deviceProps.memoryClockRate);
+        printf("   multiProcessorCount Rate:   %d\n", deviceProps.multiProcessorCount);
     }
     printf("---------------------------------------------------------\n");
 }
