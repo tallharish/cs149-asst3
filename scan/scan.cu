@@ -76,13 +76,13 @@ void exclusive_scan(int* input, int N, int* result)
     // to CUDA kernel functions (that you must write) to implement the
     // scan.
 
-    memmove(result, input, N * sizeof(int));
+    // memmove(result, input, N * sizeof(int));
 
-    int* device_result;
-    cudaError_t malloc_return_code = cudaMalloc(&device_result, N * sizeof(int));
-    assert(malloc_return_code == cudaSuccess);
+    // int* device_result;
+    // cudaError_t malloc_return_code = cudaMalloc(&device_result, N * sizeof(int));
+    // assert(malloc_return_code == cudaSuccess);
 
-    cudaMemcpy(device_result, result, N * sizeof(int), cudaMemcpyHostToDevice);
+    // cudaMemcpy(device_result, result, N * sizeof(int), cudaMemcpyHostToDevice);
 
     int block_size = 32;
 
@@ -94,7 +94,7 @@ void exclusive_scan(int* input, int N, int* result)
         int num_index = N / two_dplus1 + 1;
         int grid_size = (num_index + block_size - 1) / block_size;
         
-        upsweep_kernel<<<grid_size, block_size>>>(device_result, two_d, two_dplus1, N);
+        upsweep_kernel<<<grid_size, block_size>>>(result, two_d, two_dplus1, N);
         
         cudaDeviceSynchronize();
         cudaError_t kernel_return_code = cudaGetLastError();
@@ -103,9 +103,9 @@ void exclusive_scan(int* input, int N, int* result)
         }
     }
 
-    cudaMemcpy(result, device_result, N * sizeof(int), cudaMemcpyDeviceToHost);
+    // cudaMemcpy(result, device_result, N * sizeof(int), cudaMemcpyDeviceToHost);
     result[N - 1] = 0; //TODO: maybe move this into one of the kernel function?
-    cudaMemcpy(device_result, result, N * sizeof(int), cudaMemcpyHostToDevice);
+    // cudaMemcpy(device_result, result, N * sizeof(int), cudaMemcpyHostToDevice);
 
     // downsweep phase
     for (int two_d = N/2; two_d >= 1; two_d /= 2) {
@@ -114,7 +114,7 @@ void exclusive_scan(int* input, int N, int* result)
         int num_index = N / two_dplus1 + 1;
         int grid_size = (num_index + block_size - 1) / block_size;
 
-        downsweep_kernel<<<grid_size, block_size>>>(device_result, two_d, two_dplus1, N);
+        downsweep_kernel<<<grid_size, block_size>>>(result, two_d, two_dplus1, N);
         cudaDeviceSynchronize();
         cudaError_t kernel_return_code = cudaGetLastError();
         if (kernel_return_code != cudaSuccess) {
@@ -122,8 +122,8 @@ void exclusive_scan(int* input, int N, int* result)
         }
 
     }
-    cudaMemcpy(result, device_result, N * sizeof(int), cudaMemcpyDeviceToHost);
-    cudaFree(device_result);
+    // cudaMemcpy(result, device_result, N * sizeof(int), cudaMemcpyDeviceToHost);
+    // cudaFree(device_result);
 
 
 }
