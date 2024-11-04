@@ -43,8 +43,8 @@ static inline int nextPow2(int n) {
 // "in-place" scan, since the timing harness makes a copy of input and
 // places it in result
 
-__global__ void upsweep_kernel(int* result, int two_d, int two_dplus_1, int N) {
-    int my_idx = blockIDx.x * blockDim.x + threadIDx.x;
+__global__ void upsweep_kernel(int* result, int two_d, int two_dplus1, int N) {
+    int my_idx = blockIdx.x * blockDim.x + threadIdx.x;
     int i = my_idx * two_dplus1;
     //TODO: create fast shared memory?
     if (i < N) {
@@ -53,8 +53,8 @@ __global__ void upsweep_kernel(int* result, int two_d, int two_dplus_1, int N) {
 
 }
 
-__global__ void downsweep_kernel(int* result, int two_d, int two_dplus_1, int N) {
-    int my_idx = blockIDx.x * blockDim.x + threadIDx.x;
+__global__ void downsweep_kernel(int* result, int two_d, int two_dplus1, int N) {
+    int my_idx = blockIdx.x * blockDim.x + threadIdx.x;
     int i = my_idx * two_dplus1;
     if (i < N) {
         int t = result[i + two_d - 1];
@@ -90,14 +90,14 @@ void exclusive_scan(int* input, int N, int* result)
         int two_dplus1 = 2 * two_d;
         
         int num_index = N / two_dplus1 + 1;
-        grid_size = (num_index + block_size - 1) / block_size;
+        int grid_size = (num_index + block_size - 1) / block_size;
         
         upsweep_kernel<<<grid_size, block_size>>>(device_result, two_d, two_dplus1, N);
         cudaDeviceSynchronize();
     }
 
     cudaMemcpy(result, device_result, N * sizeof(int), cudaMemcpyDeviceToHost);
-    output[N - 1] == 0; //TODO: maybe move this into one of the kernel function?
+    result[N - 1] = 0; //TODO: maybe move this into one of the kernel function?
     cudaMemcpy(device_result, result, N * sizeof(int), cudaMemcpyHostToDevice);
 
     // downsweep phase
@@ -105,7 +105,7 @@ void exclusive_scan(int* input, int N, int* result)
         int two_dplus1 = 2 * two_d;
         
         int num_index = N / two_dplus1 + 1;
-        grid_size = (num_index + block_size - 1) / block_size;
+        int grid_size = (num_index + block_size - 1) / block_size;
 
         downsweep_kernel<<<grid_size, block_size>>>(device_result, two_d, two_dplus1, N);
         cudaDeviceSynchronize();
