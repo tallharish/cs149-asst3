@@ -633,40 +633,49 @@ CudaRenderer::advanceAnimation() {
     cudaDeviceSynchronize();
 }
 
-__global__void kernelInitPixelToCircle(int* pixelToCircle, int numCircles, int numPixels) {
+__global__ void kernelInitPixelToCircle(int* pixelToCircle) {
     int idx = blockDim.x * blockIdx.x + threadIdx.x;
+    int numCircles = &cuConstRendererParams.numCircles;
+    int numPixels = cuConstRendererParams.imageWidth * cuConstRendererParams.imageHeight;
+    
     if (idx < numCircles * numPixels) {
-        pixelToCircle(idx) = 0;
+        pixelToCircle[idx] = 0;
     }
 }
 
 
-__global__void kernelPixelToCircle(int* pixelToCircle, int numCircles, int numPixels, int imageWidth) {
+__global__ void kernelPixelToCircle(int* pixelToCircle) {
     int circleIdx = blockDim.x * blockIdx.x + threadIdx.x;
     int circleIdx3 = 3 * circleIdx;
 
+    int numCircles = &cuConstRendererParams.numCircles;
     if (circleIdx >= numCircles) {
         return;
     }
 
-    float px = position[circleIdx3];
-    float py = position[circleIdx3 + 1];
-    float pz = position[circleIdx3 +2];
-    float rad = radius[circleIndex];
+    float3 p = *(float3*)(&cuConstRendererParams.position[index3]);
+    float  rad = cuConstRendererParams.radius[index];
 
-    float minX = px - rad;
-    float maxX = px + rad;
-    float minY = py - rad;
-    float maxY = py + rad;
+    // compute the bounding box of the circle. The bound is in integer
+    // screen coordinates, so it's clamped to the edges of the screen.
+    short imageWidth = cuConstRendererParams.imageWidth;
+    short imageHeight = cuConstRendererParams.imageHeight;
+    int numPixels = static_cast<int>(imageWidth * imageHeight);
 
-    int screenMinX = CLAMP(static_cast<int>(minX * image->width), 0, image->width);
-    int screenMaxX = CLAMP(static_cast<int>(maxX * image->width)+1, 0, image->width);
-    int screenMinY = CLAMP(static_cast<int>(minY * image->height), 0, image->height);
-    int screenMaxY = CLAMP(static_cast<int>(maxY * image->height)+1, 0, image->height);
+    short minX = static_cast<short>(imageWidth * (p.x - rad));
+    short maxX = static_cast<short>(imageWidth * (p.x + rad)) + 1;
+    short minY = static_cast<short>(imageHeight * (p.y - rad));
+    short maxY = static_cast<short>(imageHeight * (p.y + rad)) + 1;
 
-    for (int x = screenMinX; x < screenMaxX; x++) {
-        for (int y = screenMinY; y < screenMaxY; y++) {
-            int idx = circleIdx * numPixels + x * imageWidth + y;
+    // a bunch of clamps.  Is there a CUDA built-in for this?
+    short screenMinX = (minX > 0) ? ((minX < imageWidth) ? minX : imageWidth) : 0;
+    short screenMaxX = (maxX > 0) ? ((maxX < imageWidth) ? maxX : imageWidth) : 0;
+    short screenMinY = (minY > 0) ? ((minY < imageHeight) ? minY : imageHeight) : 0;
+    short screenMaxY = (maxY > 0) ? ((maxY < imageHeight) ? maxY : imageHeight) : 0;
+
+    for (short x = screenMinX; x < screenMaxX; x++) {
+        for (short y = screenMinY; y < screenMaxY; y++) {
+            int idx = static_cast<int>(circleIdx * numPixels + x * imageWidth + y); // TODO: do we need to convert to int?
             pixelToCircle[idx] = 1;
         }
     }
@@ -694,11 +703,11 @@ CudaRenderer::render() {
     cudaCheckError( cudaMalloc(&pixelToCircleDevice, sizeof(int) * numPixels * numCircles) );
 
     dim3 gridDim((numCircles * numPixels + blockDim.x - 1) / blockDim.x, 1);
-    kernelInitPixelToCircle<<<gridDim, blockDim>>>(pixelToCircleDevice, numCircles, numPixels);
+    kernelInitPixelToCircle<<<gridDim, blockDim>>>(pixelToCircleDevice);
     cudaCheckError( cudaDeviceSynchronize() );
 
     dim3 gridDim((numCircles + blockDim.x - 1) / blockDim.x, 1); // TODO: we can maybe launch one thread per circle per pixel for better load balacning?
-    pixel_to_circle_kernel<<<gridDim ,blockDim >>>(pixelToCircleDevice, numCircles, numPixels, imageWidth);
+    pixel_to_circle_kernel<<<gridDim ,blockDim >>>(pixelToCircleDevice);
     cudaCheckError( cudaDeviceSynchronize() );
     
     // exclusive_scan();
