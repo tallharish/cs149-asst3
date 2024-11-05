@@ -636,7 +636,7 @@ CudaRenderer::advanceAnimation() {
 __global__ void kernelMallocPixelToCircle(int* pixelToCircle) {
     int numCircles = cuConstRendererParams.numCircles;
     int numPixels = cuConstRendererParams.imageWidth * cuConstRendererParams.imageHeight;
-    cudaCheckError( cudaMalloc(&pixelToCircleDevice, sizeof(int) * numPixels * numCircles) );
+    malloc(&pixelToCircle, sizeof(int) * numPixels * numCircles);
 }
 
 __global__ void kernelSetZeroPixelToCircle(int* pixelToCircle) {
@@ -701,9 +701,7 @@ CudaRenderer::render() {
 
 
     // pino's skeleton
-    int imageWidth = cuConstRendererParams.imageWidth;
-    int imageHeight = cuConstRendererParams.imageHeight;
-    int numPixels = imageWidth * imageHeight;
+    
 
     int* pixelToCircleDevice; // TODO: maybe use shorts or bools?
 
@@ -714,8 +712,8 @@ CudaRenderer::render() {
     kernelSetZeroPixelToCircle<<<gridDim, blockDim>>>(pixelToCircleDevice);
     cudaCheckError( cudaDeviceSynchronize() );
 
-    dim3 gridDim((numCircles + blockDim.x - 1) / blockDim.x, 1); // TODO: we can maybe launch one thread per circle per pixel for better load balacning?
-    pixel_to_circle_kernel<<<gridDim ,blockDim >>>(pixelToCircleDevice);
+    gridDim((numCircles + blockDim.x - 1) / blockDim.x, 1); // TODO: we can maybe launch one thread per circle per pixel for better load balacning?
+    kernelPixelToCircle<<<gridDim ,blockDim >>>(pixelToCircleDevice);
     cudaCheckError( cudaDeviceSynchronize() );
     
     // exclusive_scan();
