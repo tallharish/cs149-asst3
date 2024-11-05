@@ -742,12 +742,13 @@ CudaRenderer::render() {
     dim3 blockDim(256, 1);
 
     int numPixels = image->width * image->height;
-    thrust::device_ptr<int> pixelToCircleDevice = thrust::device_malloc<int>(numPixels * numCircles); // TODO: maybe use shorts or bools?
-    thrust::device_ptr<int> pixelToCircleScanDevice = = thrust::device_malloc<int>(numPixels * numCircles);
-
+    // thrust::device_ptr<int> pixelToCircleDevice = thrust::device_malloc<int>(numPixels * numCircles); // TODO: maybe use shorts or bools?
+    // thrust::device_ptr<int> pixelToCircleScanDevice = thrust::device_malloc<int>(numPixels * numCircles);
+    int* pixelToCircleDevice;
+    int* pixelToCircleScanDevice;
     
-    // cudaCheckError( cudaMalloc(&pixelToCircleDevice, sizeof(int) * numPixels * numCircles) );
-    // cudaCheckError( cudaMalloc(&pixelToCircleScanDevice, sizeof(int) * numPixels * numCircles) );
+    cudaCheckError( cudaMalloc(&pixelToCircleDevice, sizeof(int) * numPixels * numCircles) );
+    cudaCheckError( cudaMalloc(&pixelToCircleScanDevice, sizeof(int) * numPixels * numCircles) );
 
     dim3 gridDim((numCircles * numPixels + blockDim.x - 1) / blockDim.x, 1);
     kernelSetZeroPixelToCircle<<<gridDim, blockDim>>>(pixelToCircleDevice);
@@ -757,11 +758,14 @@ CudaRenderer::render() {
     kernelPixelToCircle<<<gridDim ,blockDim >>>(pixelToCircleDevice);
     cudaCheckError( cudaDeviceSynchronize() );
 
+    thrust::device_ptr<int> pixelToCircleThrust(pixelToCircleDevice);
+    thrust::device_ptr<int> pixelToCircleScanThrust(pixelToCircleScanThrust);
+
     for (int pixelIdx = 0; pixelIdx < numPixels; pixelIdx++) {
         thrust::exclusive_scan(
-            pixelToCircleDevice + pixelIdx * numCircles, 
-            pixelToCircleDevice + (pixelIdx + 1) * numCircles,
-            pixelToCircleScanDevice + pixelIdx * numCircles
+            pixelToCircleThrust + pixelIdx * numCircles, 
+            pixelToCircleThrust + (pixelIdx + 1) * numCircles,
+            pixelToCircleScanThrust + pixelIdx * numCircles
         );
     }
     cudaCheckError( cudaDeviceSynchronize() );
