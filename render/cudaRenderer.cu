@@ -14,6 +14,22 @@
 #include "sceneLoader.h"
 #include "util.h"
 
+#define DEBUG
+
+#ifdef DEBUG
+#define cudaCheckError(ans) { cudaAssert((ans), __FILE__, __LINE__); }
+inline void cudaAssert(cudaError_t code, const char *file, int line, bool abort=true)
+{
+   if (code != cudaSuccess) 
+   {
+      fprintf(stderr, "CUDA Error: %s at %s:%d\n", 
+        cudaGetErrorString(code), file, line);
+      if (abort) exit(code);
+   }
+}
+#else
+#define cudaCheckError(ans) ans
+#endif
 ////////////////////////////////////////////////////////////////////////////////////////
 // Putting all the cuda kernels here
 ///////////////////////////////////////////////////////////////////////////////////////
@@ -700,14 +716,14 @@ CudaRenderer::render() {
 
     int* pixelToCircleDevice; // TODO: maybe use shorts or bools?
 
-    int numPixels = image->width * iamge->height;
-    cudaCheckError( cudaMalloc(&pixelToCircleDevice, (int) * numPixels * numCircles) );
+    int numPixels = image->width * image->height;
+    cudaCheckError( cudaMalloc(&pixelToCircleDevice, sizeof(int) * numPixels * numCircles) );
 
     dim3 gridDim((numCircles * numPixels + blockDim.x - 1) / blockDim.x, 1);
     kernelSetZeroPixelToCircle<<<gridDim, blockDim>>>(pixelToCircleDevice);
     cudaCheckError( cudaDeviceSynchronize() );
 
-    gridDim((numCircles + blockDim.x - 1) / blockDim.x, 1); // TODO: we can maybe launch one thread per circle per pixel for better load balacning?
+    gridDim = dim3((numCircles + blockDim.x - 1) / blockDim.x, 1); // TODO: we can maybe launch one thread per circle per pixel for better load balacning?
     kernelPixelToCircle<<<gridDim ,blockDim >>>(pixelToCircleDevice);
     cudaCheckError( cudaDeviceSynchronize() );
     
