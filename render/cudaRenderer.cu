@@ -740,13 +740,14 @@ CudaRenderer::render() {
 
     // 256 threads per block is a healthy number
     dim3 blockDim(256, 1);
-    
-    thrust::device_ptr<int> pixelToCircleDevice; // TODO: maybe use shorts or bools?
-    thrust::device_ptr<int> pixelToCircleScanDevice;
 
     int numPixels = image->width * image->height;
-    cudaCheckError( cudaMalloc(&pixelToCircleDevice, (int) * numPixels * numCircles) );
-    cudaCheckError( cudaMalloc(&pixelToCircleScanDevice, (int) * numPixels * numCircles) );
+    thrust::device_ptr<int> pixelToCircleDevice = thrust::device_malloc<int>(numPixels * numCircles); // TODO: maybe use shorts or bools?
+    thrust::device_ptr<int> pixelToCircleScanDevice = = thrust::device_malloc<int>(numPixels * numCircles);
+
+    
+    // cudaCheckError( cudaMalloc(&pixelToCircleDevice, sizeof(int) * numPixels * numCircles) );
+    // cudaCheckError( cudaMalloc(&pixelToCircleScanDevice, sizeof(int) * numPixels * numCircles) );
 
     dim3 gridDim((numCircles * numPixels + blockDim.x - 1) / blockDim.x, 1);
     kernelSetZeroPixelToCircle<<<gridDim, blockDim>>>(pixelToCircleDevice);
