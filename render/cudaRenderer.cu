@@ -746,21 +746,27 @@ CudaRenderer::render() {
     // thrust::device_ptr<int> pixelToCircleScanDevice = thrust::device_malloc<int>(numPixels * numCircles);
     int* pixelToCircleDevice;
     int* pixelToCircleScanDevice;
-    
+
+    // TODO: use array of bools insteaed? we are running into out of memory problems
     cudaCheckError( cudaMalloc(&pixelToCircleDevice, sizeof(int) * numPixels * numCircles) );
     cudaCheckError( cudaMalloc(&pixelToCircleScanDevice, sizeof(int) * numPixels * numCircles) );
 
+    // set pixel to circle mapping to 0's
     dim3 gridDim((numCircles * numPixels + blockDim.x - 1) / blockDim.x, 1);
     kernelSetZeroPixelToCircle<<<gridDim, blockDim>>>(pixelToCircleDevice);
     cudaCheckError( cudaDeviceSynchronize() );
 
+    // spawn threads equal to number of circles
+    // on each circle, find the bounding box and update entries in pixelToCircleDevice (1 if in bounding box)
     gridDim = dim3((numCircles + blockDim.x - 1) / blockDim.x, 1); // TODO: we can maybe launch one thread per circle per pixel for better load balacning?
     kernelPixelToCircle<<<gridDim ,blockDim >>>(pixelToCircleDevice);
     cudaCheckError( cudaDeviceSynchronize() );
 
     thrust::device_ptr<int> pixelToCircleThrust(pixelToCircleDevice);
     thrust::device_ptr<int> pixelToCircleScanThrust(pixelToCircleScanDevice);
-
+    
+    // do exclusive scan, one for each pixel: 
+    // a (pixel, circle) entry having number i means there are i circles that needs to be rendered in that pixel before
     for (int pixelIdx = 0; pixelIdx < numPixels; pixelIdx++) {
         thrust::exclusive_scan(
             pixelToCircleThrust + pixelIdx * numCircles, 
@@ -770,6 +776,9 @@ CudaRenderer::render() {
     }
     cudaCheckError( cudaDeviceSynchronize() );
 
+    // render in steps: in step i, all (pixel, circle) pairs with value i in the exclusive scan gets rendered
+    // spawn one thread per (pixel, circle) pair
+    // TODO: this part seems really inefficient
     gridDim = dim3((numCircles * numPixels + blockDim.x - 1) / blockDim.x, 1);
     for (int step = 0; step < numCircles; step++) {
         kernelRenderByStep<<<gridDim, blockDim>>>(pixelToCircleDevice, pixelToCircleScanDevice, step);
@@ -778,9 +787,4 @@ CudaRenderer::render() {
 
     cudaCheckError( cudaFree(pixelToCircleDevice) );
     cudaCheckError( cudaFree(pixelToCircleScanDevice) );
-
-    
-    
-    // exclusive_scan();
-    // render<<< , >>>();
 }
