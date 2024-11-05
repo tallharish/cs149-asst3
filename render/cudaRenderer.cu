@@ -633,7 +633,13 @@ CudaRenderer::advanceAnimation() {
     cudaDeviceSynchronize();
 }
 
-__global__ void kernelInitPixelToCircle(int* pixelToCircle) {
+__global__ void kernelMallocPixelToCircle(int* pixelToCircle) {
+    int numCircles = cuConstRendererParams.numCircles;
+    int numPixels = cuConstRendererParams.imageWidth * cuConstRendererParams.imageHeight;
+    cudaCheckError( cudaMalloc(&pixelToCircleDevice, sizeof(int) * numPixels * numCircles) );
+}
+
+__global__ void kernelSetZeroPixelToCircle(int* pixelToCircle) {
     int idx = blockDim.x * blockIdx.x + threadIdx.x;
     int numCircles = cuConstRendererParams.numCircles;
     int numPixels = cuConstRendererParams.imageWidth * cuConstRendererParams.imageHeight;
@@ -700,10 +706,12 @@ CudaRenderer::render() {
     int numPixels = imageWidth * imageHeight;
 
     int* pixelToCircleDevice; // TODO: maybe use shorts or bools?
-    cudaCheckError( cudaMalloc(&pixelToCircleDevice, sizeof(int) * numPixels * numCircles) );
+
+    kernelMallocPixelToCircle<<<1, 1>>>(pixelToCircleDevice);
+    cudaCheckError( cudaDeviceSynchronize() );
 
     dim3 gridDim((numCircles * numPixels + blockDim.x - 1) / blockDim.x, 1);
-    kernelInitPixelToCircle<<<gridDim, blockDim>>>(pixelToCircleDevice);
+    kernelSetZeroPixelToCircle<<<gridDim, blockDim>>>(pixelToCircleDevice);
     cudaCheckError( cudaDeviceSynchronize() );
 
     dim3 gridDim((numCircles + blockDim.x - 1) / blockDim.x, 1); // TODO: we can maybe launch one thread per circle per pixel for better load balacning?
