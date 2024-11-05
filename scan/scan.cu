@@ -266,7 +266,7 @@ int find_repeats(int* device_input, int length, int* device_output) {
     int* device_next_equal;
     int* device_next_equal_prefix_s;
     cudaMalloc(&device_next_equal, sizeof(int) * rounded_length);
-    cudaMalloc(&device_next_equal_preefix_s, sizeof(int) * rounded_length);
+    cudaMalloc(&device_next_equal_prefix_s, sizeof(int) * rounded_length);
 
     next_equal_kernel<<<grid_size, block_size>>>(device_input, length, device_next_equal, device_next_equal_prefix_s);
     cudaDeviceSynchronize();
