@@ -635,7 +635,7 @@ CudaRenderer::advanceAnimation() {
 
 __global__ void kernelInitPixelToCircle(int* pixelToCircle) {
     int idx = blockDim.x * blockIdx.x + threadIdx.x;
-    int numCircles = &cuConstRendererParams.numCircles;
+    int numCircles = cuConstRendererParams.numCircles;
     int numPixels = cuConstRendererParams.imageWidth * cuConstRendererParams.imageHeight;
     
     if (idx < numCircles * numPixels) {
@@ -648,13 +648,13 @@ __global__ void kernelPixelToCircle(int* pixelToCircle) {
     int circleIdx = blockDim.x * blockIdx.x + threadIdx.x;
     int circleIdx3 = 3 * circleIdx;
 
-    int numCircles = &cuConstRendererParams.numCircles;
+    int numCircles = cuConstRendererParams.numCircles;
     if (circleIdx >= numCircles) {
         return;
     }
 
-    float3 p = *(float3*)(&cuConstRendererParams.position[index3]);
-    float  rad = cuConstRendererParams.radius[index];
+    float3 p = *(float3*)(&cuConstRendererParams.position[circleIdx3]);
+    float  rad = cuConstRendererParams.radius[circleIdx];
 
     // compute the bounding box of the circle. The bound is in integer
     // screen coordinates, so it's clamped to the edges of the screen.
