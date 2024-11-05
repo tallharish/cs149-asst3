@@ -633,11 +633,6 @@ CudaRenderer::advanceAnimation() {
     cudaDeviceSynchronize();
 }
 
-__global__ void kernelMallocPixelToCircle(int* pixelToCircle) {
-    int numCircles = cuConstRendererParams.numCircles;
-    int numPixels = cuConstRendererParams.imageWidth * cuConstRendererParams.imageHeight;
-    malloc(&pixelToCircle, sizeof(int) * numPixels * numCircles);
-}
 
 __global__ void kernelSetZeroPixelToCircle(int* pixelToCircle) {
     int idx = blockDim.x * blockIdx.x + threadIdx.x;
@@ -705,8 +700,8 @@ CudaRenderer::render() {
 
     int* pixelToCircleDevice; // TODO: maybe use shorts or bools?
 
-    kernelMallocPixelToCircle<<<1, 1>>>(pixelToCircleDevice);
-    cudaCheckError( cudaDeviceSynchronize() );
+    int numPixels = image->width * iamge->height;
+    cudaCheckError( cudaMalloc(&pixelToCircleDevice, (int) * numPixels * numCircles) );
 
     dim3 gridDim((numCircles * numPixels + blockDim.x - 1) / blockDim.x, 1);
     kernelSetZeroPixelToCircle<<<gridDim, blockDim>>>(pixelToCircleDevice);
