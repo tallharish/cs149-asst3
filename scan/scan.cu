@@ -252,18 +252,22 @@ int find_repeats(int* device_input, int length, int* device_output) {
     // exclusive_scan function with them. However, your implementation
     // must ensure that the results of find_repeats are correct given
     // the actual array length.
+    int block_size = 32;
+
     int rounded_length = nextPow2(length);
+    int grid_size = (rounded_length + block_size - 1) / block_size;
+    
     int* device_next_equal;
     int* device_next_equal_prefix_s;
     cudaMalloc(&device_next_equal, sizeof(int) * rounded_length);
     cudaMalloc(&device_next_equal_preefix_s, sizeof(int) * rounded_length);
 
-    next_equal_kernel<<<>>>(device_input, length, device_next_equal, device_next_equal_prefix_s);
+    next_equal_kernel<<<grid_size, block_size>>>(device_input, length, device_next_equal, device_next_equal_prefix_s);
     cudaDeviceSynchronize();
 
     exclusive_scan(device_next_equal, length, device_next_equal_prefix_s);
 
-    get_repeat_index_kernel<<<,>>>(device_next_equal, device_next_equal_prefix_s, device_output);
+    get_repeat_index_kernel<<<grid_size, block_size>>>(device_next_equal, device_next_equal_prefix_s, device_output);
     cudaDeviceSynchronize();
 
     cudaFree(device_next_equal);
