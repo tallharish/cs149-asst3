@@ -682,7 +682,7 @@ __global__ void kernelPixelToCircle(int* pixelToCircle) {
     // screen coordinates, so it's clamped to the edges of the screen.
     short imageWidth = cuConstRendererParams.imageWidth;
     short imageHeight = cuConstRendererParams.imageHeight;
-    int numPixels = static_cast<int>(imageWidth * imageHeight); // TODO: do we need to convert to int?
+    // int numPixels = static_cast<int>(imageWidth * imageHeight); // TODO: do we need to convert to int?
 
     short minX = static_cast<short>(imageWidth * (p.x - rad));
     short maxX = static_cast<short>(imageWidth * (p.x + rad)) + 1;
@@ -698,7 +698,7 @@ __global__ void kernelPixelToCircle(int* pixelToCircle) {
     for (short x = screenMinX; x < screenMaxX; x++) {
         for (short y = screenMinY; y < screenMaxY; y++) {
             int pixelIdx = static_cast<int>(y * imageWidth + x); // TODO: do we need to convert to int?
-            int idx = pixelIdx * imageHeight + circleIdx;
+            int idx = pixelIdx * numCircles + circleIdx;
             pixelToCircle[idx] = 1;
         }
     }
@@ -759,7 +759,7 @@ CudaRenderer::render() {
     cudaCheckError( cudaDeviceSynchronize() );
 
     thrust::device_ptr<int> pixelToCircleThrust(pixelToCircleDevice);
-    thrust::device_ptr<int> pixelToCircleScanThrust(pixelToCircleScanThrust);
+    thrust::device_ptr<int> pixelToCircleScanThrust(pixelToCircleScanDevice);
 
     for (int pixelIdx = 0; pixelIdx < numPixels; pixelIdx++) {
         thrust::exclusive_scan(
