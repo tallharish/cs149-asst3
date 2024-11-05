@@ -395,7 +395,7 @@ __global__ void kernelRenderCircles() {
 
     // read position and radius
     float3 p = *(float3*)(&cuConstRendererParams.position[index3]);
-    float  rad = cuConstRendererParams.radius[index];
+    float rad = cuConstRendererParams.radius[index];
 
     // compute the bounding box of the circle. The bound is in integer
     // screen coordinates, so it's clamped to the edges of the screen.
@@ -661,7 +661,7 @@ __global__ void kernelPixelToCircle(int* pixelToCircle) {
     // screen coordinates, so it's clamped to the edges of the screen.
     short imageWidth = cuConstRendererParams.imageWidth;
     short imageHeight = cuConstRendererParams.imageHeight;
-    int numPixels = static_cast<int>(imageWidth * imageHeight);
+    int numPixels = static_cast<int>(imageWidth * imageHeight); // TODO: do we need to convert to int?
 
     short minX = static_cast<short>(imageWidth * (p.x - rad));
     short maxX = static_cast<short>(imageWidth * (p.x + rad)) + 1;
@@ -676,9 +676,40 @@ __global__ void kernelPixelToCircle(int* pixelToCircle) {
 
     for (short x = screenMinX; x < screenMaxX; x++) {
         for (short y = screenMinY; y < screenMaxY; y++) {
-            int idx = static_cast<int>(circleIdx * numPixels + x * imageWidth + y); // TODO: do we need to convert to int?
+            int pixelIdx = static_cast<int>(y * imageWidth + x); // TODO: do we need to convert to int?
+            int idx = pixelIdx * imageHeight + circleIdx;
             pixelToCircle[idx] = 1;
         }
+    }
+
+}
+
+__global__ void kernelRenderByStep(int* pixelToCircleDevice, int* pixelToCircleScanDevice, int step) {
+    int idx = blockDim.x * blockIdx.x + threadIdx.x;
+    int numCircles = cuConstRendererParams.numCircles;
+    int imageWidth = cuConstRendererParams.imageWidth;
+    int imageHeight = cuConstRendererParams.imageHeight;
+    int numPixels = imageWidth * imageHeight;
+    
+    if (idx >= numCircles * numPixels) {
+        break;
+    }
+    if (pixelToCircleDevice[idx] == 1 and pixelToCircleScanDevice[idx] == step) {
+        int circleIdx = idx % numCircles;
+        int pixelIdx = idx / numCircles;
+        int pixelX = pixelIdx % imageWidth;
+        int pixelY = pixelIdx / imageWidth;
+
+        float3 p = *(float3*)(&cuConstRendererParams.position[circleIdx * 3]);
+        float4* imgPtr = (float4*)(&cuConstRendererParams.imageData[4 * (pixelY * imageWidth + pixelX)]);
+
+        float invWidth = 1.f / imageWidth;
+        float invHeight = 1.f / imageHeight;
+
+        float2 pixelCenterNorm = make_float2(invWidth * (static_cast<float>(pixelX) + 0.5f),
+                                            invHeight * (static_cast<float>(pixelY) + 0.5f));
+        shadePixel(circleIndex, pixelCenterNorm, p, imgPtr);
+
     }
 
 }
@@ -688,20 +719,13 @@ CudaRenderer::render() {
 
     // 256 threads per block is a healthy number
     dim3 blockDim(256, 1);
-    // dim3 gridDim((numCircles + blockDim.x - 1) / blockDim.x);
-
-    // kernelRenderCircles<<<gridDim, blockDim>>>();
-    // cudaDeviceSynchronize();
-
-
-
-    // pino's skeleton
     
-
-    int* pixelToCircleDevice; // TODO: maybe use shorts or bools?
+    thrust::device_ptr<int> pixelToCircleDevice; // TODO: maybe use shorts or bools?
+    thrust::device_ptr<int> pixelToCircleScanDevice;
 
     int numPixels = image->width * iamge->height;
     cudaCheckError( cudaMalloc(&pixelToCircleDevice, (int) * numPixels * numCircles) );
+    cudaCheckError( cudaMalloc(&pixelToCircleScanDevice, (int) * numPixels * numCircles) );
 
     dim3 gridDim((numCircles * numPixels + blockDim.x - 1) / blockDim.x, 1);
     kernelSetZeroPixelToCircle<<<gridDim, blockDim>>>(pixelToCircleDevice);
@@ -710,6 +734,26 @@ CudaRenderer::render() {
     gridDim((numCircles + blockDim.x - 1) / blockDim.x, 1); // TODO: we can maybe launch one thread per circle per pixel for better load balacning?
     kernelPixelToCircle<<<gridDim ,blockDim >>>(pixelToCircleDevice);
     cudaCheckError( cudaDeviceSynchronize() );
+
+    for (int pixelIdx = 0; pixelIdx < numPixels; pixelIdx++) {
+        thrust::exclusive_scan(
+            pixelToCircleDevice + pixelIdx * numCircles, 
+            pixelToCircleDevice + (pixelIdx + 1) * numCircles,
+            pixelToCircleScanDevice + pixelIdx * numCircles
+        );
+    }
+    cudaCheckError( cudaDeviceSynchronize() );
+
+    gridDim = dim3((numCircles * numPixels + blockDim.x - 1) / blockDim.x, 1);
+    for (int step = 0; step < numCircles; step++) {
+        kernelRenderByStep<<<gridDim, blockDim>>>(pixelToCircleDevice, pixelToCircleScanDevice, step);
+        cudaCheckError( cudaDeviceSynchronize() );
+    }
+
+    cudaCheckError( cudaFree(pixelToCircleDevice) );
+    cudaCheckError( cudaFree(pixelToCircleScanDevice) );
+
+    
     
     // exclusive_scan();
     // render<<< , >>>();
