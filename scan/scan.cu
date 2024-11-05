@@ -66,8 +66,7 @@ __global__ void downsweep_kernel(int* result, int two_d, int two_dplus1, int N) 
 
 __global__ void set_last_zero_kernel(int* result, int N) {
     if (blockIdx.x == 0 && threadIdx.x == 0) {
-
-        result[N - 1] = 0;
+	result[N - 1] = 0;
     }
 }
 
@@ -83,6 +82,13 @@ void exclusive_scan(int* input, int N, int* result)
     // to CUDA kernel functions (that you must write) to implement the
     // scan.
 
+    // memmove(result, input, N * sizeof(int));
+
+    // int* device_result;
+    // cudaError_t malloc_return_code = cudaMalloc(&device_result, N * sizeof(int));
+    // assert(malloc_return_code == cudaSuccess);
+
+    // cudaMemcpy(device_result, result, N * sizeof(int), cudaMemcpyHostToDevice);
     N = nextPow2(N);
     int block_size = 32;
 
@@ -113,7 +119,7 @@ void exclusive_scan(int* input, int N, int* result)
     for (int two_d = N/2; two_d >= 1; two_d /= 2) {
         int two_dplus1 = 2 * two_d;
         
-        int num_index = (N + 1)  / two_dplus1;
+        int num_index = (N + 1) / two_dplus1;
         int grid_size = (num_index + block_size - 1) / block_size;
 
         downsweep_kernel<<<grid_size, block_size>>>(result, two_d, two_dplus1, N);
