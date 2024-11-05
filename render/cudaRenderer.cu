@@ -8,6 +8,11 @@
 #include <cuda_runtime.h>
 #include <driver_functions.h>
 
+#include <thrust/device_free.h>
+#include <thrust/device_malloc.h>
+#include <thrust/device_ptr.h>
+#include <thrust/scan.h>
+
 #include "cudaRenderer.h"
 #include "image.h"
 #include "noise.h"
@@ -708,7 +713,7 @@ __global__ void kernelRenderByStep(int* pixelToCircleDevice, int* pixelToCircleS
     int numPixels = imageWidth * imageHeight;
     
     if (idx >= numCircles * numPixels) {
-        break;
+        return;
     }
     if (pixelToCircleDevice[idx] == 1 and pixelToCircleScanDevice[idx] == step) {
         int circleIdx = idx % numCircles;
@@ -717,14 +722,14 @@ __global__ void kernelRenderByStep(int* pixelToCircleDevice, int* pixelToCircleS
         int pixelY = pixelIdx / imageWidth;
 
         float3 p = *(float3*)(&cuConstRendererParams.position[circleIdx * 3]);
-        float4* imgPtr = (float4*)(&cuConstRendererParams.imageData[4 * (pixelY * imageWidth + pixelX)]);
+        float4* imgPtr = (float4*)(&cuConstRendererParams.imageData[4 * pixelIdx]);
 
         float invWidth = 1.f / imageWidth;
         float invHeight = 1.f / imageHeight;
 
         float2 pixelCenterNorm = make_float2(invWidth * (static_cast<float>(pixelX) + 0.5f),
                                             invHeight * (static_cast<float>(pixelY) + 0.5f));
-        shadePixel(circleIndex, pixelCenterNorm, p, imgPtr);
+        shadePixel(circleIdx, pixelCenterNorm, p, imgPtr);
 
     }
 
@@ -739,7 +744,7 @@ CudaRenderer::render() {
     thrust::device_ptr<int> pixelToCircleDevice; // TODO: maybe use shorts or bools?
     thrust::device_ptr<int> pixelToCircleScanDevice;
 
-    int numPixels = image->width * iamge->height;
+    int numPixels = image->width * image->height;
     cudaCheckError( cudaMalloc(&pixelToCircleDevice, (int) * numPixels * numCircles) );
     cudaCheckError( cudaMalloc(&pixelToCircleScanDevice, (int) * numPixels * numCircles) );
 
