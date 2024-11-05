@@ -633,13 +633,74 @@ CudaRenderer::advanceAnimation() {
     cudaDeviceSynchronize();
 }
 
+__global__void kernelInitPixelToCircle(int* pixelToCircle, int numCircles, int numPixels) {
+    int idx = blockDim.x * blockIdx.x + threadIdx.x;
+    if (idx < numCircles * numPixels) {
+        pixelToCircle(idx) = 0;
+    }
+}
+
+
+__global__void kernelPixelToCircle(int* pixelToCircle, int numCircles, int numPixels, int imageWidth) {
+    int circleIdx = blockDim.x * blockIdx.x + threadIdx.x;
+    int circleIdx3 = 3 * circleIdx;
+
+    if (circleIdx >= numCircles) {
+        return;
+    }
+
+    float px = position[circleIdx3];
+    float py = position[circleIdx3 + 1];
+    float pz = position[circleIdx3 +2];
+    float rad = radius[circleIndex];
+
+    float minX = px - rad;
+    float maxX = px + rad;
+    float minY = py - rad;
+    float maxY = py + rad;
+
+    int screenMinX = CLAMP(static_cast<int>(minX * image->width), 0, image->width);
+    int screenMaxX = CLAMP(static_cast<int>(maxX * image->width)+1, 0, image->width);
+    int screenMinY = CLAMP(static_cast<int>(minY * image->height), 0, image->height);
+    int screenMaxY = CLAMP(static_cast<int>(maxY * image->height)+1, 0, image->height);
+
+    for (int x = screenMinX; x < screenMaxX; x++) {
+        for (int y = screenMinY; y < screenMaxY; y++) {
+            int idx = circleIdx * numPixels + x * imageWidth + y;
+            pixelToCircle[idx] = 1;
+        }
+    }
+
+}
+
 void
 CudaRenderer::render() {
 
     // 256 threads per block is a healthy number
     dim3 blockDim(256, 1);
-    dim3 gridDim((numCircles + blockDim.x - 1) / blockDim.x);
+    // dim3 gridDim((numCircles + blockDim.x - 1) / blockDim.x);
 
-    kernelRenderCircles<<<gridDim, blockDim>>>();
-    cudaDeviceSynchronize();
+    // kernelRenderCircles<<<gridDim, blockDim>>>();
+    // cudaDeviceSynchronize();
+
+
+
+    // pino's skeleton
+    int imageWidth = cuConstRendererParams.imageWidth;
+    int imageHeight = cuConstRendererParams.imageHeight;
+    int numPixels = imageWidth * imageHeight;
+
+    int* pixelToCircleDevice; // TODO: maybe use shorts or bools?
+    cudaCheckError( cudaMalloc(&pixelToCircleDevice, sizeof(int) * numPixels * numCircles) );
+
+    dim3 gridDim((numCircles * numPixels + blockDim.x - 1) / blockDim.x, 1);
+    kernelInitPixelToCircle<<<gridDim, blockDim>>>(pixelToCircleDevice, numCircles, numPixels);
+    cudaCheckError( cudaDeviceSynchronize() );
+
+    dim3 gridDim((numCircles + blockDim.x - 1) / blockDim.x, 1); // TODO: we can maybe launch one thread per circle per pixel for better load balacning?
+    pixel_to_circle_kernel<<<gridDim ,blockDim >>>(pixelToCircleDevice, numCircles, numPixels, imageWidth);
+    cudaCheckError( cudaDeviceSynchronize() );
+    
+    // exclusive_scan();
+    // render<<< , >>>();
 }
