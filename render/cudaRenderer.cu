@@ -498,7 +498,18 @@ __global__ void kernelRenderBlocks(int block_size)
 
     // Convert circleInBlock to a list with only circles with 1 (using prefix sum)
 
+    __shared__ int selectedCircles[cuConstRendererParams.numCircles];
+    __shared__ int numSelectedCircles;
+
+    __syncthreads();
+
     // Map threads to pixels => iterate selected circles and render them in order.
+    __shared__ int pixelToCircle[blockDim.x * blockDim.y * numSelectedCircles];
+
+    for (int i = threadLinearIndex; i < numSelectedCircles; i += totalThreads) {
+        int circleIdx = selectedCircles[i];
+    }
+    int pixelIdx; // map threads to pixels, should be 1-to-1 
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////
