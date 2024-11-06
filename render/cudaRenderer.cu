@@ -503,12 +503,14 @@ __global__ void kernelRenderBlocks(int block_size)
 
     __syncthreads();
 
-    // Map threads to pixels => iterate selected circles and render them in order.
+    // Map threads to selected circles => get pixel to selected circles mapping
     __shared__ int pixelToCircle[blockDim.x * blockDim.y * numSelectedCircles];
 
     for (int i = threadLinearIndex; i < numSelectedCircles; i += totalThreads) {
         int circleIdx = selectedCircles[i];
+        
     }
+    // Map threads to pixels => iterate selected circles and render them in order.
     int pixelIdx; // map threads to pixels, should be 1-to-1 
 }
 
