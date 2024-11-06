@@ -17,6 +17,25 @@
 
 #define IMAGE_BLOCK_SIZE 32
 
+#ifdef DEBUG
+#define cudaCheckError(ans)                    \
+    {                                          \
+        cudaAssert((ans), __FILE__, __LINE__); \
+    }
+inline void cudaAssert(cudaError_t code, const char *file, int line, bool abort = true)
+{
+    if (code != cudaSuccess)
+    {
+        fprintf(stderr, "CUDA Error: %s at %s:%d\n",
+                cudaGetErrorString(code), file, line);
+        if (abort)
+            exit(code);
+    }
+}
+#else
+#define cudaCheckError(ans) ans
+#endif
+
 ////////////////////////////////////////////////////////////////////////////////////////
 // Putting all the cuda kernels here
 ///////////////////////////////////////////////////////////////////////////////////////
@@ -404,7 +423,6 @@ shadePixel(int circleIndex, float2 pixelCenter, float3 p, float4 *imagePtr)
 // resulting image will be incorrect.
 __global__ void kernelRenderCircles()
 {
-    
 
     int index = blockIdx.x * blockDim.x + threadIdx.x;
 
@@ -443,16 +461,17 @@ __global__ void kernelRenderCircles()
         {
             float2 pixelCenterNorm = make_float2(invWidth * (static_cast<float>(pixelX) + 0.5f),
                                                  invHeight * (static_cast<float>(pixelY) + 0.5f));
+
             shadePixel(index, pixelCenterNorm, p, imgPtr);
             imgPtr++;
         }
     }
 }
 
-__global__ void kernelRenderBlocks(int block_size)
+__global__ void kernelRenderBlocks()
 {
     // *******************************
-    // ***********STEP 1************** 
+    // ***********STEP 1**************
 
     // Map thread to pixel to verify bounds.
     int x = blockIdx.x * blockDim.x + threadIdx.x;
@@ -460,13 +479,15 @@ __global__ void kernelRenderBlocks(int block_size)
 
     int imageWidth = cuConstRendererParams.imageWidth;
     int imageHeight = cuConstRendererParams.imageHeight;
+    float invWidth = 1.f / imageWidth;
+    float invHeight = 1.f / imageHeight;
 
     if (x >= imageWidth || y >= imageHeight)
     {
         return;
     }
 
-    int idx = y * imageWidth + x; // Mapping thread to pixel -> to be used later.
+    // int idx = y * imageWidth + x; // Mapping thread to pixel -> to be used later.
 
     // Get box dimensions - Should be in pixel integers, typecasted to float for circleInBox API
     // TODO - Need to scale down by imageWidth OR scale p, rad by imageWidth.
@@ -477,9 +498,10 @@ __global__ void kernelRenderBlocks(int block_size)
 
     // Map threads to circles => determine which thread map to which circle => append to a local bitmap
     int threadLinearIndex = threadIdx.y * blockDim.x + threadIdx.x;
-
     int totalThreads = blockDim.x * blockDim.y;
-    __shared__ bool circleInBlock[cuConstRendererParams.numCircles]; 
+
+    // TODO - Use a thrust::vector instead of circleInBlock for optimization.
+    __shared__ bool circleInBlock[10000];
     int circleInBox_result;
     // Stride over all circles. This could be millions!
     for (int i = threadLinearIndex; i < cuConstRendererParams.numCircles; i += totalThreads)
@@ -488,7 +510,7 @@ __global__ void kernelRenderBlocks(int block_size)
         float3 p = *(float3 *)(&cuConstRendererParams.position[3 * threadLinearIndex]); // NOTE - Position is 3x index.
         float rad = cuConstRendererParams.radius[threadLinearIndex];                    // NOTE - Radius is at index.
         // TODO - how to scale rad?
-        circleInBox_result = circleInBox(p.x, p.y, rad, boxL / imageWidth, boxR / imageWidth, boxT / imageHeight, boxB / imageHeight);
+        circleInBox_result = circleInBox(p.x, p.y, rad, boxL * invWidth, boxR * invWidth, boxT * invHeight, boxB * invHeight);
         if (circleInBox_result == 1)
         {
             circleInBlock[i] = true;
@@ -500,18 +522,36 @@ __global__ void kernelRenderBlocks(int block_size)
     }
     __syncthreads();
 
-    // Convert circleInBlock to a list with only circles with 1 (using prefix sum)
+    // Map threads to pixels => (x,y) represents the pixel
+    // Each pixel iterates through circles and shadePixels it. ShadePixel() takes care if the circle intersects with the pixel or not.
+    for (int circle = 0; circle < cuConstRendererParams.numCircles; circle += 1)
+    {
+        if (circleInBlock[circle] == false)
+        {
+            continue;
+        }
 
-    __shared__ int selectedCircles[cuConstRendererParams.numCircles]; //TODO: not sure how to do this
-    __shared__ int numSelectedCircles; // TODO: not sure how to do this
+        float2 pixelCenterNorm = make_float2(invWidth * (static_cast<float>(x) + 0.5f),
+                                             invHeight * (static_cast<float>(y) + 0.5f));
+        float3 p = *(float3 *)(&cuConstRendererParams.position[3 * circle]); // NOTE - Position is 3x circle index.
+
+        float4 *imgPtr = (float4 *)(&cuConstRendererParams.imageData[4 * (y * imageWidth + x)]);
+        shadePixel(circle, pixelCenterNorm, p, imgPtr);
+    }
+
+    __syncthreads();
+
+    /*
+    __shared__ int selectedCircles[cuConstRendererParams.numCircles]; // TODO: not sure how to do this
+    __shared__ int numSelectedCircles;                                // TODO: not sure how to do this
 
     __syncthreads();
 
     // *******************************
-    // ***********STEP 2************** 
+    // ***********STEP 2**************
     // Map threads to selected circles => get pixel to selected circles mapping
-    __shared__ bool pixelToCircle[blockDim.x * blockDim.y * numSelectedCircles]; 
-    
+    __shared__ bool pixelToCircle[blockDim.x * blockDim.y * numSelectedCircles];
+
     // false initialize
     for (int i = 0; i < numSelectedCircles; i++) {
         pixelToCircle[threadLinearIndex * numSelectedCircles + i] = false;
@@ -541,23 +581,23 @@ __global__ void kernelRenderBlocks(int block_size)
                 pixelToCircle[(y * blockDim.x + x) * numSelectedCircles + i] = true;
             }
         }
-        
+
     }
     __syncthreads();
 
     // *******************************
-    // ***********STEP 3************** 
+    // ***********STEP 3**************
 
     // Map threads to pixels => iterate selected circles and render them in order.
-    // map threads to pixels, should be 1-to-1 
+    // map threads to pixels, should be 1-to-1
 
     // note: with the one-to-one thread->pixel mapping,
     // I think each thread should then maintain its own list of circles that its pixel should render
     int circlesToRender[numSelectedCircles]; //TODO: not sure how to do this
     int numCirclesToRender; //TODO: not sure how to do this
-    
 
-    int pixelX = blockIdx.x * blockDim.x + threadIdx.x; 
+
+    int pixelX = blockIdx.x * blockDim.x + threadIdx.x;
     int pixelY = blockIdx.y * blockDim.y + threadIdx.y;
     int linearPixelIdx = pixelIdx_y * imageWidth + pixelIdx_x;
 
@@ -576,7 +616,8 @@ __global__ void kernelRenderBlocks(int block_size)
                                              invHeight * (static_cast<float>(pixelY) + 0.5f));
         shadePixel(index, pixelCenterNorm, p, imgPtr);
     }
-    __syncthreads();        
+    __syncthreads();
+    */
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////
@@ -802,11 +843,24 @@ void CudaRenderer::advanceAnimation()
 
 void CudaRenderer::render()
 {
-    int imageWidth = image->width;
-    int imageHeight = image->height;
-    // 256 threads per block is a healthy number
-    dim3 threadPerBlock(32, 32);
-    dim3 numBlocks((imageWidth + IMAGE_BLOCK_SIZE - 1) / IMAGE_BLOCK_SIZE, (imageHeight + IMAGE_BLOCK_SIZE - 1) / IMAGE_BLOCK_SIZE);
-    kernelRenderBlocks<<<numBlocks, threadPerBlock>>>(IMAGE_BLOCK_SIZE);
-    cudaDeviceSynchronize();
+    if (1)
+    {
+        int imageWidth = image->width;
+        int imageHeight = image->height;
+        // 256 threads per block is a healthy number
+        dim3 threadPerBlock(32, 32);
+        dim3 numBlocks((imageWidth + IMAGE_BLOCK_SIZE - 1) / IMAGE_BLOCK_SIZE, (imageHeight + IMAGE_BLOCK_SIZE - 1) / IMAGE_BLOCK_SIZE);
+        kernelRenderBlocks<<<numBlocks, threadPerBlock>>>();
+        cudaCheckError(cudaDeviceSynchronize());
+    }
+    else
+    {
+        std::cout << "NumCircles - " << numCircles << std::endl;
+        // 256 threads per block is a healthy number
+        dim3 blockDim(256, 1);
+        dim3 gridDim((numCircles + blockDim.x - 1) / blockDim.x);
+
+        kernelRenderCircles<<<gridDim, blockDim>>>();
+        cudaDeviceSynchronize();
+    }
 }
