@@ -404,6 +404,7 @@ shadePixel(int circleIndex, float2 pixelCenter, float3 p, float4 *imagePtr)
 // resulting image will be incorrect.
 __global__ void kernelRenderCircles()
 {
+    
 
     int index = blockIdx.x * blockDim.x + threadIdx.x;
 
@@ -450,6 +451,9 @@ __global__ void kernelRenderCircles()
 
 __global__ void kernelRenderBlocks(int block_size)
 {
+    // *******************************
+    // ***********STEP 1************** 
+
     // Map thread to pixel to verify bounds.
     int x = blockIdx.x * blockDim.x + threadIdx.x;
     int y = blockIdx.y * blockDim.y + threadIdx.y;
@@ -475,7 +479,7 @@ __global__ void kernelRenderBlocks(int block_size)
     int threadLinearIndex = threadIdx.y * blockDim.x + threadIdx.x;
 
     int totalThreads = blockDim.x * blockDim.y;
-    __shared__ bool circleInBlock[cuConstRendererParams.numCircles];
+    __shared__ bool circleInBlock[cuConstRendererParams.numCircles]; 
     int circleInBox_result;
     // Stride over all circles. This could be millions!
     for (int i = threadLinearIndex; i < cuConstRendererParams.numCircles; i += totalThreads)
@@ -498,20 +502,81 @@ __global__ void kernelRenderBlocks(int block_size)
 
     // Convert circleInBlock to a list with only circles with 1 (using prefix sum)
 
-    __shared__ int selectedCircles[cuConstRendererParams.numCircles];
-    __shared__ int numSelectedCircles;
+    __shared__ int selectedCircles[cuConstRendererParams.numCircles]; //TODO: not sure how to do this
+    __shared__ int numSelectedCircles; // TODO: not sure how to do this
 
     __syncthreads();
 
+    // *******************************
+    // ***********STEP 2************** 
     // Map threads to selected circles => get pixel to selected circles mapping
-    __shared__ int pixelToCircle[blockDim.x * blockDim.y * numSelectedCircles];
+    __shared__ bool pixelToCircle[blockDim.x * blockDim.y * numSelectedCircles]; 
+    
+    // false initialize
+    for (int i = 0; i < numSelectedCircles; i++) {
+        pixelToCircle[threadLinearIndex * numSelectedCircles + i] = false;
+    }
 
     for (int i = threadLinearIndex; i < numSelectedCircles; i += totalThreads) {
         int circleIdx = selectedCircles[i];
+
+        float3 p = *(float3*)(&cuConstRendererParams.position[3 * circleIdx]);
+        float rad = cuConstRendererParams.radius[index];
+
+        short imageWidth = cuConstRendererParams.imageWidth;
+        short imageHeight = cuConstRendererParams.imageHeight;
+        short minX = static_cast<short>(imageWidth * (p.x - rad)) - blockDim.x * blockIdx.x;
+        short maxX = static_cast<short>(imageWidth * (p.x + rad)) + 1 - blockDim.x * blockIdx.x;
+        short minY = static_cast<short>(imageHeight * (p.y - rad)) - blockDim.y * blockIdx.y;
+        short maxY = static_cast<short>(imageHeight * (p.y + rad)) + 1 - blockDim.y * blockIdx.y;
+
+        // a bunch of clamps.  Is there a CUDA built-in for this?
+        minX = (minX > 0) ? ((minX < blockDim.x) ? minX : blockDim.x) : 0;
+        maxX = (maxX > 0) ? ((maxX < blockDim.x) ? maxX : blockDim.x) : 0;
+        minY = (minY > 0) ? ((minY < blockDim.y) ? minY : blockDim.y) : 0;
+        maxY = (maxY > 0) ? ((maxY < blockDim.y) ? maxY : blockDim.y) : 0;
+
+        for (int x = minX; x < maxX; x++) {
+            for (int y = minY; y < maxY; y++) {
+                pixelToCircle[(y * blockDim.x + x) * numSelectedCircles + i] = true;
+            }
+        }
         
     }
+    __syncthreads();
+
+    // *******************************
+    // ***********STEP 3************** 
+
     // Map threads to pixels => iterate selected circles and render them in order.
-    int pixelIdx; // map threads to pixels, should be 1-to-1 
+    // map threads to pixels, should be 1-to-1 
+
+    // note: with the one-to-one thread->pixel mapping,
+    // I think each thread should then maintain its own list of circles that its pixel should render
+    int circlesToRender[numSelectedCircles]; //TODO: not sure how to do this
+    int numCirclesToRender; //TODO: not sure how to do this
+    
+
+    int pixelX = blockIdx.x * blockDim.x + threadIdx.x; 
+    int pixelY = blockIdx.y * blockDim.y + threadIdx.y;
+    int linearPixelIdx = pixelIdx_y * imageWidth + pixelIdx_x;
+
+    for (int i = 0; i < numCirclesToRender; i++) {
+        int circleIdx = selectedCircles[circlesToRender[i]];
+        float3 p = *(float3 *)(&cuConstRendererParams.position[3 * circleIdx]);
+        float rad = cuConstRendererParams.radius[circleIdx];
+
+        short minX = static_cast<short>(imageWidth * (p.x - rad));
+        short screenMinX = (minX > 0) ? ((minX < imageWidth) ? minX : imageWidth) : 0;
+        float4 *imgPtr = (float4 *)(&cuConstRendererParams.imageData[4 * (pixelY * imageWidth + screenMinX)]);
+
+        float invWidth = 1.f / imageWidth;
+        float invHeight = 1.f / imageHeight;
+        float2 pixelCenterNorm = make_float2(invWidth * (static_cast<float>(pixelX) + 0.5f),
+                                             invHeight * (static_cast<float>(pixelY) + 0.5f));
+        shadePixel(index, pixelCenterNorm, p, imgPtr);
+    }
+    __syncthreads();        
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////
