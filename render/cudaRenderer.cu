@@ -8,6 +8,7 @@
 #include <cuda.h>
 #include <cuda_runtime.h>
 #include <driver_functions.h>
+#include <cassert>
 
 #include "cudaRenderer.h"
 #include "image.h"
@@ -492,13 +493,21 @@ __global__ void kernelRenderBlocks()
     // Get box dimensions - Should be in pixel integers, typecasted to float for circleInBox API
     // TODO - Need to scale down by imageWidth OR scale p, rad by imageWidth.
     float boxL = (blockIdx.x * blockDim.x);
-    float boxR = (blockIdx.x + 1) * blockDim.x;
-    float boxT = blockIdx.y * blockDim.y;
-    float boxB = (blockIdx.y + 1) * blockDim.y;
+    float boxR = (blockIdx.x + 1) * blockDim.x - 1;
+    float boxB = blockIdx.y * blockDim.y;
+    float boxT = (blockIdx.y + 1) * blockDim.y - 1;
+
+    assert(boxL <= boxR);
+    assert(boxT >= boxB);
 
     // Map threads to circles => determine which thread map to which circle => append to a local bitmap
     int threadLinearIndex = threadIdx.y * blockDim.x + threadIdx.x;
     int totalThreads = blockDim.x * blockDim.y;
+
+    if (blockIdx.x == 31 && blockIdx.y == 31 && threadLinearIndex == 0)
+    {
+        printf("boxL %f boxR %f boxT %f boxB %f\n", boxL, boxR, boxT, boxB);
+    }
 
     // TODO - Use a thrust::vector instead of circleInBlock for optimization.
     __shared__ bool circleInBlock[10000];
@@ -847,8 +856,7 @@ void CudaRenderer::render()
     {
         int imageWidth = image->width;
         int imageHeight = image->height;
-        // 256 threads per block is a healthy number
-        dim3 threadPerBlock(32, 32);
+        dim3 threadPerBlock(IMAGE_BLOCK_SIZE, IMAGE_BLOCK_SIZE);
         dim3 numBlocks((imageWidth + IMAGE_BLOCK_SIZE - 1) / IMAGE_BLOCK_SIZE, (imageHeight + IMAGE_BLOCK_SIZE - 1) / IMAGE_BLOCK_SIZE);
         kernelRenderBlocks<<<numBlocks, threadPerBlock>>>();
         cudaCheckError(cudaDeviceSynchronize());
