@@ -3,6 +3,7 @@
 #include <math.h>
 #include <stdio.h>
 #include <vector>
+#include <iostream>
 
 #include <cuda.h>
 #include <cuda_runtime.h>
@@ -13,6 +14,8 @@
 #include "noise.h"
 #include "sceneLoader.h"
 #include "util.h"
+
+#define IMAGE_BLOCK_SIZE 32
 
 ////////////////////////////////////////////////////////////////////////////////////////
 // Putting all the cuda kernels here
@@ -55,6 +58,7 @@ __constant__ float cuConstColorRamp[COLOR_MAP_SIZE][3];
 // file simpler and to seperate code that should not be modified
 #include "noiseCuda.cu_inl"
 #include "lookupColor.cu_inl"
+#include "circleBoxTest.cu_inl"
 
 // kernelClearImageSnowflake -- (CUDA device code)
 //
@@ -444,6 +448,59 @@ __global__ void kernelRenderCircles()
     }
 }
 
+__global__ void kernelRenderBlocks(int block_size)
+{
+    // Map thread to pixel to verify bounds.
+    int x = blockIdx.x * blockDim.x + threadIdx.x;
+    int y = blockIdx.y * blockDim.y + threadIdx.y;
+
+    int imageWidth = cuConstRendererParams.imageWidth;
+    int imageHeight = cuConstRendererParams.imageHeight;
+
+    if (x >= imageWidth || y >= imageHeight)
+    {
+        return;
+    }
+
+    int idx = y * imageWidth + x; // Mapping thread to pixel -> to be used later.
+
+    // Get box dimensions - Should be in pixel integers, typecasted to float for circleInBox API
+    // TODO - Need to scale down by imageWidth OR scale p, rad by imageWidth.
+    float boxL = (blockIdx.x * blockDim.x);
+    float boxR = (blockIdx.x + 1) * blockDim.x;
+    float boxT = blockIdx.y * blockDim.y;
+    float boxB = (blockIdx.y + 1) * blockDim.y;
+
+    // Map threads to circles => determine which thread map to which circle => append to a local bitmap
+    int threadLinearIndex = threadIdx.y * blockDim.x + threadIdx.x;
+
+    int totalThreads = blockDim.x * blockDim.y;
+    __shared__ bool circleInBlock[cuConstRendererParams.numCircles];
+    int circleInBox_result;
+    // Stride over all circles. This could be millions!
+    for (int i = threadLinearIndex; i < cuConstRendererParams.numCircles; i += totalThreads)
+    {
+        // Get Circle dimensions.
+        float3 p = *(float3 *)(&cuConstRendererParams.position[3 * threadLinearIndex]); // NOTE - Position is 3x index.
+        float rad = cuConstRendererParams.radius[threadLinearIndex];                    // NOTE - Radius is at index.
+        // TODO - how to scale rad?
+        circleInBox_result = circleInBox(p.x, p.y, rad, boxL / imageWidth, boxR / imageWidth, boxT / imageHeight, boxB / imageHeight);
+        if (circleInBox_result == 1)
+        {
+            circleInBlock[i] = true;
+        }
+        else
+        {
+            circleInBlock[i] = false;
+        }
+    }
+    __syncthreads();
+
+    // Convert circleInBlock to a list with only circles with 1 (using prefix sum)
+
+    // Map threads to pixels => iterate selected circles and render them in order.
+}
+
 ////////////////////////////////////////////////////////////////////////////////////////
 
 CudaRenderer::CudaRenderer()
@@ -667,11 +724,11 @@ void CudaRenderer::advanceAnimation()
 
 void CudaRenderer::render()
 {
-
+    int imageWidth = image->width;
+    int imageHeight = image->height;
     // 256 threads per block is a healthy number
-    dim3 blockDim(256, 1);
-    dim3 gridDim((numCircles + blockDim.x - 1) / blockDim.x);
-
-    kernelRenderCircles<<<gridDim, blockDim>>>();
+    dim3 threadPerBlock(32, 32);
+    dim3 numBlocks((imageWidth + IMAGE_BLOCK_SIZE - 1) / IMAGE_BLOCK_SIZE, (imageHeight + IMAGE_BLOCK_SIZE - 1) / IMAGE_BLOCK_SIZE);
+    kernelRenderBlocks<<<numBlocks, threadPerBlock>>>(IMAGE_BLOCK_SIZE);
     cudaDeviceSynchronize();
 }
