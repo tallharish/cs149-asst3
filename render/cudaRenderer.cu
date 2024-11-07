@@ -469,6 +469,7 @@ __global__ void kernelRenderCircles()
     }
 }
 
+/* New optimal method of Rendering image at a block-level */
 __global__ void kernelRenderBlocks()
 {
     // *******************************
@@ -483,13 +484,6 @@ __global__ void kernelRenderBlocks()
     float invWidth = 1.f / imageWidth;
     float invHeight = 1.f / imageHeight;
 
-    // if (x >= imageWidth || y >= imageHeight)
-    // {
-    //     return;
-    // }
-
-    // int idx = y * imageWidth + x; // Mapping thread to pixel -> to be used later.
-
     // Get box dimensions - Should be in pixel integers, typecasted to float for circleInBox API
     float boxL = (blockIdx.x * blockDim.x);
     float boxR = (blockIdx.x + 1) * blockDim.x;
@@ -502,11 +496,6 @@ __global__ void kernelRenderBlocks()
     // Map threads to circles => determine which thread map to which circle => append to a local bitmap
     int threadLinearIndex = threadIdx.y * blockDim.x + threadIdx.x;
     int totalThreads = blockDim.x * blockDim.y;
-
-    // if (blockIdx.x == 31 && blockIdx.y == 31 && threadLinearIndex == 0)
-    // {
-    //     printf("boxL %f boxR %f boxT %f boxB %f\n", boxL, boxR, boxT, boxB);
-    // }
 
     // TODO - consider using a lock with an array of integers, such that each threads appends index of array with lock and writes a new circleId.
     __syncthreads();
@@ -530,24 +519,12 @@ __global__ void kernelRenderBlocks()
         }
     }
     __syncthreads();
+
     if (x >= imageWidth || y >= imageHeight)
     {
         return;
     }
-    
-    // if (blockIdx.x == 0 && blockIdx.y == 0 && threadLinearIndex == 0)
-    // {
-    //     int j = 0;
-    //     for (int i = 0; i < cuConstRendererParams.numCircles; i += 1)
-    //     {
-    //         if (circleInBlock[i] == 1)
-    //         {
-    //             printf("%d - %f\t", i, cuConstRendererParams.radius[i]);
-    //             j++;
-    //         }
-    //     }
-    //     printf("total - %d", j);
-    // }
+
     // __syncthreads();
     // Map threads to pixels => (x,y) represents the pixel
     // Each pixel iterates through circles and shadePixels it. ShadePixel() takes care if the circle intersects with the pixel or not.
@@ -562,91 +539,11 @@ __global__ void kernelRenderBlocks()
                                              invHeight * (static_cast<float>(y) + 0.5f));
         float3 p = *(float3 *)(&cuConstRendererParams.position[3 * circle]); // NOTE - Position is 3x circle index.
 
-    
-
         float4 *imgPtr = (float4 *)(&cuConstRendererParams.imageData[4 * (y * imageWidth + x)]);
         shadePixel(circle, pixelCenterNorm, p, imgPtr);
     }
 
     __syncthreads();
-
-    /*
-    __shared__ int selectedCircles[cuConstRendererParams.numCircles]; // TODO: not sure how to do this
-    __shared__ int numSelectedCircles;                                // TODO: not sure how to do this
-
-    __syncthreads();
-
-    // *******************************
-    // ***********STEP 2**************
-    // Map threads to selected circles => get pixel to selected circles mapping
-    __shared__ bool pixelToCircle[blockDim.x * blockDim.y * numSelectedCircles];
-
-    // false initialize
-    for (int i = 0; i < numSelectedCircles; i++) {
-        pixelToCircle[threadLinearIndex * numSelectedCircles + i] = false;
-    }
-
-    for (int i = threadLinearIndex; i < numSelectedCircles; i += totalThreads) {
-        int circleIdx = selectedCircles[i];
-
-        float3 p = *(float3*)(&cuConstRendererParams.position[3 * circleIdx]);
-        float rad = cuConstRendererParams.radius[index];
-
-        short imageWidth = cuConstRendererParams.imageWidth;
-        short imageHeight = cuConstRendererParams.imageHeight;
-        short minX = static_cast<short>(imageWidth * (p.x - rad)) - blockDim.x * blockIdx.x;
-        short maxX = static_cast<short>(imageWidth * (p.x + rad)) + 1 - blockDim.x * blockIdx.x;
-        short minY = static_cast<short>(imageHeight * (p.y - rad)) - blockDim.y * blockIdx.y;
-        short maxY = static_cast<short>(imageHeight * (p.y + rad)) + 1 - blockDim.y * blockIdx.y;
-
-        // a bunch of clamps.  Is there a CUDA built-in for this?
-        minX = (minX > 0) ? ((minX < blockDim.x) ? minX : blockDim.x) : 0;
-        maxX = (maxX > 0) ? ((maxX < blockDim.x) ? maxX : blockDim.x) : 0;
-        minY = (minY > 0) ? ((minY < blockDim.y) ? minY : blockDim.y) : 0;
-        maxY = (maxY > 0) ? ((maxY < blockDim.y) ? maxY : blockDim.y) : 0;
-
-        for (int x = minX; x < maxX; x++) {
-            for (int y = minY; y < maxY; y++) {
-                pixelToCircle[(y * blockDim.x + x) * numSelectedCircles + i] = true;
-            }
-        }
-
-    }
-    __syncthreads();
-
-    // *******************************
-    // ***********STEP 3**************
-
-    // Map threads to pixels => iterate selected circles and render them in order.
-    // map threads to pixels, should be 1-to-1
-
-    // note: with the one-to-one thread->pixel mapping,
-    // I think each thread should then maintain its own list of circles that its pixel should render
-    int circlesToRender[numSelectedCircles]; //TODO: not sure how to do this
-    int numCirclesToRender; //TODO: not sure how to do this
-
-
-    int pixelX = blockIdx.x * blockDim.x + threadIdx.x;
-    int pixelY = blockIdx.y * blockDim.y + threadIdx.y;
-    int linearPixelIdx = pixelIdx_y * imageWidth + pixelIdx_x;
-
-    for (int i = 0; i < numCirclesToRender; i++) {
-        int circleIdx = selectedCircles[circlesToRender[i]];
-        float3 p = *(float3 *)(&cuConstRendererParams.position[3 * circleIdx]);
-        float rad = cuConstRendererParams.radius[circleIdx];
-
-        short minX = static_cast<short>(imageWidth * (p.x - rad));
-        short screenMinX = (minX > 0) ? ((minX < imageWidth) ? minX : imageWidth) : 0;
-        float4 *imgPtr = (float4 *)(&cuConstRendererParams.imageData[4 * (pixelY * imageWidth + screenMinX)]);
-
-        float invWidth = 1.f / imageWidth;
-        float invHeight = 1.f / imageHeight;
-        float2 pixelCenterNorm = make_float2(invWidth * (static_cast<float>(pixelX) + 0.5f),
-                                             invHeight * (static_cast<float>(pixelY) + 0.5f));
-        shadePixel(index, pixelCenterNorm, p, imgPtr);
-    }
-    __syncthreads();
-    */
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////
