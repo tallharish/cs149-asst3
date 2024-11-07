@@ -491,7 +491,6 @@ __global__ void kernelRenderBlocks()
     // int idx = y * imageWidth + x; // Mapping thread to pixel -> to be used later.
 
     // Get box dimensions - Should be in pixel integers, typecasted to float for circleInBox API
-    // TODO - Need to scale down by imageWidth OR scale p, rad by imageWidth.
     float boxL = (blockIdx.x * blockDim.x);
     float boxR = (blockIdx.x + 1) * blockDim.x - 1;
     float boxB = blockIdx.y * blockDim.y;
@@ -504,12 +503,12 @@ __global__ void kernelRenderBlocks()
     int threadLinearIndex = threadIdx.y * blockDim.x + threadIdx.x;
     int totalThreads = blockDim.x * blockDim.y;
 
-    if (blockIdx.x == 31 && blockIdx.y == 31 && threadLinearIndex == 0)
-    {
-        printf("boxL %f boxR %f boxT %f boxB %f\n", boxL, boxR, boxT, boxB);
-    }
+    // if (blockIdx.x == 31 && blockIdx.y == 31 && threadLinearIndex == 0)
+    // {
+    //     printf("boxL %f boxR %f boxT %f boxB %f\n", boxL, boxR, boxT, boxB);
+    // }
 
-    // TODO - Use a thrust::vector instead of circleInBlock for optimization.
+    // TODO - consider using a lock with an array of integers, such that each threads appends index of array with lock and writes a new circleId.
     __shared__ bool circleInBlock[10000];
     int circleInBox_result;
     // Stride over all circles. This could be millions!
@@ -518,7 +517,7 @@ __global__ void kernelRenderBlocks()
         // Get Circle dimensions.
         float3 p = *(float3 *)(&cuConstRendererParams.position[3 * threadLinearIndex]); // NOTE - Position is 3x index.
         float rad = cuConstRendererParams.radius[threadLinearIndex];                    // NOTE - Radius is at index.
-        // TODO - how to scale rad?
+
         circleInBox_result = circleInBox(p.x, p.y, rad, boxL * invWidth, boxR * invWidth, boxT * invHeight, boxB * invHeight);
         if (circleInBox_result == 1)
         {
@@ -530,7 +529,20 @@ __global__ void kernelRenderBlocks()
         }
     }
     __syncthreads();
-
+    // if (blockIdx.x == 0 && blockIdx.y == 0 && threadLinearIndex == 0)
+    // {
+    //     int j = 0;
+    //     for (int i = 0; i < cuConstRendererParams.numCircles; i += 1)
+    //     {
+    //         if (circleInBlock[i] == 1)
+    //         {
+    //             printf("%d - %f\t", i, cuConstRendererParams.radius[i]);
+    //             j++;
+    //         }
+    //     }
+    //     printf("total - %d", j);
+    // }
+    // __syncthreads();
     // Map threads to pixels => (x,y) represents the pixel
     // Each pixel iterates through circles and shadePixels it. ShadePixel() takes care if the circle intersects with the pixel or not.
     for (int circle = 0; circle < cuConstRendererParams.numCircles; circle += 1)
