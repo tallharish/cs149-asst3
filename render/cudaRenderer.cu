@@ -470,7 +470,10 @@ __global__ void kernelRenderCircles()
 }
 
 __global__ void kernelRenderBlocks()
+
+
 {
+    extern __shared__ bool circleInBlock[];
     // *******************************
     // ***********STEP 1**************
 
@@ -509,14 +512,14 @@ __global__ void kernelRenderBlocks()
     // }
 
     // TODO - consider using a lock with an array of integers, such that each threads appends index of array with lock and writes a new circleId.
-    __syncthreads();
-    __shared__ bool circleInBlock[cuConstRendererParams.numCircles];
+
+    
     int circleInBox_result;
     // Stride over all circles. This could be millions!
     int circPerThread = (cuConstRendererParams.numCircles + totalThreads - 1) / totalThreads;
-    int startIndex = threadLinearIndex * total_Threads
+    int startIndex = threadLinearIndex * totalThreads
     int endIndex = std::min((threadLinearIndex + 1) * totalThreads, cuConstRendererParams.numCircles);
-    for (int i = startIndex; endIndex; i += 1)
+    for (int i = startIndex; i < endIndex; i += 1)
     {
         // Get Circle dimensions.
         float3 p = *(float3 *)(&cuConstRendererParams.position[3 * i]); // NOTE - Position is 3x index.
@@ -881,7 +884,7 @@ void CudaRenderer::render()
         int imageHeight = image->height;
         dim3 threadPerBlock(IMAGE_BLOCK_SIZE, IMAGE_BLOCK_SIZE);
         dim3 numBlocks((imageWidth + IMAGE_BLOCK_SIZE - 1) / IMAGE_BLOCK_SIZE, (imageHeight + IMAGE_BLOCK_SIZE - 1) / IMAGE_BLOCK_SIZE);
-        kernelRenderBlocks<<<numBlocks, threadPerBlock>>>();
+        kernelRenderBlocks<<<numBlocks, threadPerBlock, sizeof(bool) * numCircles>>>();
         cudaCheckError(cudaDeviceSynchronize());
     }
     else
