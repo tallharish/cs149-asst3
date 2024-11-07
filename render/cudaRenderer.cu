@@ -517,8 +517,9 @@ __global__ void kernelRenderBlocks()
     int circleInBox_result;
     // Stride over all circles. This could be millions!
     int circPerThread = (cuConstRendererParams.numCircles + totalThreads - 1) / totalThreads;
-    int startIndex = threadLinearIndex * totalThreads
-    int endIndex = std::min((threadLinearIndex + 1) * totalThreads, cuConstRendererParams.numCircles);
+    int startIndex = threadLinearIndex * circPerThread;
+    int endIndex = (threadLinearIndex + 1) * circPerThread;
+    if (endIndex > cuConstRendererParams.numCircles) endIndex = cuConstRendererParams.numCircles;
     for (int i = startIndex; i < endIndex; i += 1)
     {
         // Get Circle dimensions.
