@@ -472,9 +472,6 @@ __global__ void kernelRenderCircles()
 /* New optimal method of Rendering image at a block-level */
 __global__ void kernelRenderBlocks()
 {
-    // *******************************
-    // ***********STEP 1**************
-
     // Map thread to pixel to verify bounds.
     int x = blockIdx.x * blockDim.x + threadIdx.x;
     int y = blockIdx.y * blockDim.y + threadIdx.y;
@@ -483,6 +480,11 @@ __global__ void kernelRenderBlocks()
     int imageHeight = cuConstRendererParams.imageHeight;
     float invWidth = 1.f / imageWidth;
     float invHeight = 1.f / imageHeight;
+
+    if (x >= imageWidth || y >= imageHeight)
+    {
+        return;
+    }
 
     // Get box dimensions - Should be in pixel integers, typecasted to float for circleInBox API
     float boxL = (blockIdx.x * blockDim.x);
@@ -519,11 +521,6 @@ __global__ void kernelRenderBlocks()
         }
     }
     __syncthreads();
-
-    if (x >= imageWidth || y >= imageHeight)
-    {
-        return;
-    }
 
     // __syncthreads();
     // Map threads to pixels => (x,y) represents the pixel
