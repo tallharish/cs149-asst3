@@ -528,6 +528,7 @@ __global__ void kernelRenderBlocks()
     // __syncthreads();
     // Map threads to pixels => (x,y) represents the pixel
     // Each pixel iterates through circles and shadePixels it. ShadePixel() takes care if the circle intersects with the pixel or not.
+    float4 pixelColor = *(float4 *)(&cuConstRendererParams.imageData[4 * (y * imageWidth + x)]);
     for (int circle = 0; circle < cuConstRendererParams.numCircles; circle += 1)
     {
         if (circleInBlock[circle] == false)
@@ -539,10 +540,10 @@ __global__ void kernelRenderBlocks()
                                              invHeight * (static_cast<float>(y) + 0.5f));
         float3 p = *(float3 *)(&cuConstRendererParams.position[3 * circle]); // NOTE - Position is 3x circle index.
 
-        float4 *imgPtr = (float4 *)(&cuConstRendererParams.imageData[4 * (y * imageWidth + x)]);
-        shadePixel(circle, pixelCenterNorm, p, imgPtr);
+        shadePixel(circle, pixelCenterNorm, p, &pixelColor);
     }
 
+    *(float4 *)(&cuConstRendererParams.imageData[4 * (y * imageWidth + x)]) = pixelColor;
     __syncthreads();
 }
 
