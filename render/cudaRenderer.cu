@@ -473,8 +473,10 @@ __global__ void kernelRenderBlocks()
 
 
 {
-    extern __shared__ int xyz[];
-    __shared__ int numCirclesInByThread[32 * 32];
+    extern __shared__ int circlesIntersectingBox[]; // array size equal to numCircles
+    // each thread populates this array (at different starting points) with ids of circles with intersection with box
+    
+    __shared__ int numCirclesInByThread[32 * 32]; // number of circles intersecting the box found by each thread
     // *******************************
     // ***********STEP 1**************
 
@@ -517,13 +519,16 @@ __global__ void kernelRenderBlocks()
     
     int circleInBox_result;
     // Stride over all circles. This could be millions!
-    int circPerThread = (cuConstRendererParams.numCircles + totalThreads - 1) / totalThreads;
+
+    // each thread now checks a contiguous subset of circle indices
+    int circPerThread = (cuConstRendererParams.numCircles + totalThreads - 1) / totalThreads; // num circle indices each thread checks
     int startIndex = threadLinearIndex * circPerThread;
     int endIndex = (threadLinearIndex + 1) * circPerThread;
     if (endIndex > cuConstRendererParams.numCircles) {
 	endIndex = cuConstRendererParams.numCircles;
     }
-
+    // for each thread, populate circlesInBox, starting at threadLinearIndex * circPerThread, 
+    // with indices of circles that have intersection with the box
     numCirclesInByThread[threadLinearIndex] = 0;
     for (int i = startIndex; i < endIndex; i += 1)
     {
@@ -541,7 +546,7 @@ __global__ void kernelRenderBlocks()
         //     circleInBlock[i] = false;
         // }
         if (circleInBox_result == 1) {
-            xyz[startIndex + numCirclesInByThread[threadLinearIndex]] = i;
+            circlesIntersectingBox[startIndex + numCirclesInByThread[threadLinearIndex]] = i;
             numCirclesInByThread[threadLinearIndex] += 1;
         }
     }
@@ -570,6 +575,7 @@ __global__ void kernelRenderBlocks()
     for (int i = 0; i < cuConstRendererParams.numCircles; i += 1)
     {
         int processedByThread = i / totalThreads;
+        // once we have looked at every circle processed by current thread, jump to starting point for next thread
         if (i % totalThreads >= numCirclesInByThread[processedByThread]) {
             i = (processedByThread + 1) * totalThreads - 1;
             continue;
@@ -578,7 +584,7 @@ __global__ void kernelRenderBlocks()
         // {
         //     continue;
         // }
-        int circle = xyz[i];
+        int circle = circlesIntersectingBox[i];
 
         float2 pixelCenterNorm = make_float2(invWidth * (static_cast<float>(x) + 0.5f),
                                              invHeight * (static_cast<float>(y) + 0.5f));
