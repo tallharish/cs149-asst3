@@ -492,9 +492,9 @@ __global__ void kernelRenderBlocks()
 
     // Get box dimensions - Should be in pixel integers, typecasted to float for circleInBox API
     float boxL = (blockIdx.x * blockDim.x);
-    float boxR = (blockIdx.x + 1) * blockDim.x - 1;
+    float boxR = (blockIdx.x + 1) * blockDim.x;
     float boxB = blockIdx.y * blockDim.y;
-    float boxT = (blockIdx.y + 1) * blockDim.y - 1;
+    float boxT = (blockIdx.y + 1) * blockDim.y;
 
     assert(boxL <= boxR);
     assert(boxT >= boxB);
@@ -556,7 +556,10 @@ __global__ void kernelRenderBlocks()
                                              invHeight * (static_cast<float>(y) + 0.5f));
         float3 p = *(float3 *)(&cuConstRendererParams.position[3 * circle]); // NOTE - Position is 3x circle index.
 
-        float4 *imgPtr = (float4 *)(&cuConstRendererParams.imageData[4 * (y * imageWidth + x)]);
+        short minX = static_cast<short>(imageWidth * (p.x - rad));
+        short screenMinX = (minX > 0) ? ((minX < imageWidth) ? minX : imageWidth) : 0;
+
+        float4 *imgPtr = (float4 *)(&cuConstRendererParams.imageData[4 * (y * imageWidth + screenMinX)]);
         shadePixel(circle, pixelCenterNorm, p, imgPtr);
     }
 
