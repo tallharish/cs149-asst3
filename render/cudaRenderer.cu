@@ -474,6 +474,7 @@ __global__ void kernelRenderBlocks()
 
 {
     extern __shared__ bool circleInBlock[];
+    __shared__ int numCirclesInBlock[blockDim.x * blockDim.y];
     // *******************************
     // ***********STEP 1**************
 
@@ -520,6 +521,8 @@ __global__ void kernelRenderBlocks()
     int startIndex = threadLinearIndex * circPerThread;
     int endIndex = (threadLinearIndex + 1) * circPerThread;
     if (endIndex > cuConstRendererParams.numCircles) endIndex = cuConstRendererParams.numCircles;
+
+    int numCirclesInBox[threadLinearIndex] = 0;
     for (int i = startIndex; i < endIndex; i += 1)
     {
         // Get Circle dimensions.
@@ -527,13 +530,17 @@ __global__ void kernelRenderBlocks()
         float rad = cuConstRendererParams.radius[i];                    // NOTE - Radius is at index.
 
         circleInBox_result = circleInBox(p.x, p.y, rad, boxL * invWidth, boxR * invWidth, boxT * invHeight, boxB * invHeight);
-        if (circleInBox_result == 1)
-        {
-            circleInBlock[i] = true;
-        }
-        else
-        {
-            circleInBlock[i] = false;
+        // if (circleInBox_result == 1)
+        // {
+        //     circleInBlock[i] = true;
+        // }
+        // else
+        // {
+        //     circleInBlock[i] = false;
+        // }
+        if (circleInBox_result == 1) {
+            circleInBlock[startIndex + numCirclesInBox[threadLinearIndex]] = i;
+            numCirclesInBox[threadLinearIndex] += 1;
         }
     }
     __syncthreads();
@@ -558,12 +565,18 @@ __global__ void kernelRenderBlocks()
     // __syncthreads();
     // Map threads to pixels => (x,y) represents the pixel
     // Each pixel iterates through circles and shadePixels it. ShadePixel() takes care if the circle intersects with the pixel or not.
-    for (int circle = 0; circle < cuConstRendererParams.numCircles; circle += 1)
+    for (int i = 0; i < cuConstRendererParams.numCircles; circle += 1)
     {
-        if (circleInBlock[circle] == false)
-        {
+        int processedByThread = i / totalThreads;
+        if (i % totalThreads) >= numCirclesInBox[processedByThread] {
+            i = (processedByThread + 1) * totalThreads - 1;
             continue;
         }
+        // if (circleInBlock[circle] == false)
+        // {
+        //     continue;
+        // }
+        circle = circleInBlock[i];
 
         float2 pixelCenterNorm = make_float2(invWidth * (static_cast<float>(x) + 0.5f),
                                              invHeight * (static_cast<float>(y) + 0.5f));
