@@ -483,10 +483,10 @@ __global__ void kernelRenderBlocks()
     float invWidth = 1.f / imageWidth;
     float invHeight = 1.f / imageHeight;
 
-    if (x >= imageWidth || y >= imageHeight)
-    {
-        return;
-    }
+    // if (x >= imageWidth || y >= imageHeight)
+    // {
+    //     return;
+    // }
 
     // int idx = y * imageWidth + x; // Mapping thread to pixel -> to be used later.
 
@@ -509,14 +509,15 @@ __global__ void kernelRenderBlocks()
     // }
 
     // TODO - consider using a lock with an array of integers, such that each threads appends index of array with lock and writes a new circleId.
+    __syncthreads();
     __shared__ bool circleInBlock[10000];
     int circleInBox_result;
     // Stride over all circles. This could be millions!
     for (int i = threadLinearIndex; i < cuConstRendererParams.numCircles; i += totalThreads)
     {
         // Get Circle dimensions.
-        float3 p = *(float3 *)(&cuConstRendererParams.position[3 * threadLinearIndex]); // NOTE - Position is 3x index.
-        float rad = cuConstRendererParams.radius[threadLinearIndex];                    // NOTE - Radius is at index.
+        float3 p = *(float3 *)(&cuConstRendererParams.position[3 * i]); // NOTE - Position is 3x index.
+        float rad = cuConstRendererParams.radius[i];                    // NOTE - Radius is at index.
 
         circleInBox_result = circleInBox(p.x, p.y, rad, boxL * invWidth, boxR * invWidth, boxT * invHeight, boxB * invHeight);
         if (circleInBox_result == 1)
@@ -529,6 +530,11 @@ __global__ void kernelRenderBlocks()
         }
     }
     __syncthreads();
+    if (x >= imageWidth || y >= imageHeight)
+    {
+        return;
+    }
+    
     // if (blockIdx.x == 0 && blockIdx.y == 0 && threadLinearIndex == 0)
     // {
     //     int j = 0;
@@ -556,10 +562,9 @@ __global__ void kernelRenderBlocks()
                                              invHeight * (static_cast<float>(y) + 0.5f));
         float3 p = *(float3 *)(&cuConstRendererParams.position[3 * circle]); // NOTE - Position is 3x circle index.
 
-        short minX = static_cast<short>(imageWidth * (p.x - rad));
-        short screenMinX = (minX > 0) ? ((minX < imageWidth) ? minX : imageWidth) : 0;
+    
 
-        float4 *imgPtr = (float4 *)(&cuConstRendererParams.imageData[4 * (y * imageWidth + screenMinX)]);
+        float4 *imgPtr = (float4 *)(&cuConstRendererParams.imageData[4 * (y * imageWidth + x)]);
         shadePixel(circle, pixelCenterNorm, p, imgPtr);
     }
 
