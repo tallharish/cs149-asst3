@@ -504,20 +504,21 @@ __global__ void kernelRenderBlocks()
     __shared__ bool circleInBlock[10000];
     int circleInBox_result;
     // Stride over all circles. This could be millions!
-    for (int i = threadLinearIndex; i < cuConstRendererParams.numCircles; i += totalThreads)
+    for (int c = 0; c < cuConstRendererParams.numCircles; c += totalThreads)
     {
         // Get Circle dimensions.
-        float3 p = *(float3 *)(&cuConstRendererParams.position[3 * i]); // NOTE - Position is 3x index.
-        float rad = cuConstRendererParams.radius[i];                    // NOTE - Radius is at index.
+
+        float3 p = *(float3 *)(&cuConstRendererParams.position[3 * (c + threadLinearIndex)]); // NOTE - Position is 3x index.
+        float rad = cuConstRendererParams.radius[(c + threadLinearIndex)];                                          // NOTE - Radius is at index.
 
         circleInBox_result = circleInBox(p.x, p.y, rad, boxL * invWidth, boxR * invWidth, boxT * invHeight, boxB * invHeight);
         if (circleInBox_result == 1)
         {
-            circleInBlock[i] = true;
+            circleInBlock[(c + threadLinearIndex)] = true;
         }
         else
         {
-            circleInBlock[i] = false;
+            circleInBlock[(c + threadLinearIndex)] = false;
         }
     }
     __syncthreads();
