@@ -590,27 +590,27 @@ __global__ void kernelRenderBlocksSimple()
     int totalThreads = blockDim.x * blockDim.y;
 
     // TODO - consider using a lock with an array of integers, such that each threads appends index of array with lock and writes a new circleId.
-    __syncthreads();
-    __shared__ bool circleInBlock[3];
-    int circleInBox_result;
-    // Stride over all circles. This could be millions!
-    for (int i = threadLinearIndex; i < cuConstRendererParams.numCircles; i += totalThreads)
-    {
-        // Get Circle dimensions.
-        float3 p = *(float3 *)(&cuConstRendererParams.position[3 * i]); // NOTE - Position is 3x index.
-        float rad = cuConstRendererParams.radius[i];                    // NOTE - Radius is at index.
+    // __syncthreads();
+    // __shared__ bool circleInBlock[3];
+    // int circleInBox_result;
+    // // Stride over all circles. This could be millions!
+    // for (int i = threadLinearIndex; i < cuConstRendererParams.numCircles; i += totalThreads)
+    // {
+    //     // Get Circle dimensions.
+    //     float3 p = *(float3 *)(&cuConstRendererParams.position[3 * i]); // NOTE - Position is 3x index.
+    //     float rad = cuConstRendererParams.radius[i];                    // NOTE - Radius is at index.
 
-        circleInBox_result = circleInBox(p.x, p.y, rad, boxL * invWidth, boxR * invWidth, boxT * invHeight, boxB * invHeight);
-        if (circleInBox_result == 1)
-        {
-            circleInBlock[i] = true;
-        }
-        else
-        {
-            circleInBlock[i] = false;
-        }
-    }
-    __syncthreads();
+    //     circleInBox_result = circleInBox(p.x, p.y, rad, boxL * invWidth, boxR * invWidth, boxT * invHeight, boxB * invHeight);
+    //     if (circleInBox_result == 1)
+    //     {
+    //         circleInBlock[i] = true;
+    //     }
+    //     else
+    //     {
+    //         circleInBlock[i] = false;
+    //     }
+    // }
+    // __syncthreads();
     if (x >= imageWidth || y >= imageHeight)
     {
         return;
@@ -618,10 +618,10 @@ __global__ void kernelRenderBlocksSimple()
 
     for (int circle = 0; circle < cuConstRendererParams.numCircles; circle += 1)
     {
-        if (circleInBlock[circle] == false)
-        {
-            continue;
-        }
+        // if (circleInBlock[circle] == false)
+        // {
+        //     continue;
+        // }
 
         float2 pixelCenterNorm = make_float2(invWidth * (static_cast<float>(x) + 0.5f),
                                              invHeight * (static_cast<float>(y) + 0.5f));
