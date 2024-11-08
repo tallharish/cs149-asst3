@@ -484,10 +484,10 @@ __global__ void kernelRenderBlocks()
     float invWidth = 1.f / imageWidth;
     float invHeight = 1.f / imageHeight;
 
-    if (x >= imageWidth || y >= imageHeight)
-    {
-        return;
-    }
+    // if (x >= imageWidth || y >= imageHeight)
+    // {
+    //     return;
+    // }
 
     // Get box dimensions - Should be in pixel integers, typecasted to float for circleInBox API
     float boxL = (blockIdx.x * blockDim.x);
@@ -536,6 +536,12 @@ __global__ void kernelRenderBlocks()
         }
 
         __syncthreads();
+
+        if (x >= imageWidth || y >= imageHeight)
+        {
+            __syncthreads();
+            continue;
+        }
         int numCirclesShortlist = exclusiveScanRes[IMAGE_BLOCK_SIZE * IMAGE_BLOCK_SIZE - 1] + circleInBlock[IMAGE_BLOCK_SIZE * IMAGE_BLOCK_SIZE - 1];
 
         // Map threads to pixels => (x,y) represents the pixel
@@ -589,28 +595,6 @@ __global__ void kernelRenderBlocksSimple()
     int threadLinearIndex = threadIdx.y * blockDim.x + threadIdx.x;
     int totalThreads = blockDim.x * blockDim.y;
 
-    // TODO - consider using a lock with an array of integers, such that each threads appends index of array with lock and writes a new circleId.
-    // __syncthreads();
-    // __shared__ bool circleInBlock[3];
-    // int circleInBox_result;
-    // // Stride over all circles. This could be millions!
-    // for (int i = threadLinearIndex; i < cuConstRendererParams.numCircles; i += totalThreads)
-    // {
-    //     // Get Circle dimensions.
-    //     float3 p = *(float3 *)(&cuConstRendererParams.position[3 * i]); // NOTE - Position is 3x index.
-    //     float rad = cuConstRendererParams.radius[i];                    // NOTE - Radius is at index.
-
-    //     circleInBox_result = circleInBox(p.x, p.y, rad, boxL * invWidth, boxR * invWidth, boxT * invHeight, boxB * invHeight);
-    //     if (circleInBox_result == 1)
-    //     {
-    //         circleInBlock[i] = true;
-    //     }
-    //     else
-    //     {
-    //         circleInBlock[i] = false;
-    //     }
-    // }
-    // __syncthreads();
     if (x >= imageWidth || y >= imageHeight)
     {
         return;
