@@ -497,14 +497,14 @@ __global__ void kernelRenderBlocks()
 
     // Map threads to circles => determine which thread map to which circle => append to a local bitmap
     int threadLinearIndex = threadIdx.y * blockDim.x + threadIdx.x;
-    // int totalThreads = blockDim.x * blockDim.y;
+    int totalThreads = blockDim.x * blockDim.y;
 
     // TODO - consider using a lock with an array of integers, such that each threads appends index of array with lock and writes a new circleId.
     __syncthreads();
     __shared__ bool circleInBlock[10000];
     int circleInBox_result;
     // Stride over all circles. This could be millions!
-    for (int c = 0; c < cuConstRendererParams.numCircles; c += (IMAGE_BLOCK_SIZE * IMAGE_BLOCK_SIZE))
+    for (int c = 0; c < cuConstRendererParams.numCircles; c += totalThreads)
     {
         // Get Circle dimensions.
 
@@ -526,7 +526,7 @@ __global__ void kernelRenderBlocks()
         // Map threads to pixels => (x,y) represents the pixel
         // Each pixel iterates through circles and shadePixels it. ShadePixel() takes care if the circle intersects with the pixel or not.
         float4 pixelColor = *(float4 *)(&cuConstRendererParams.imageData[4 * (y * imageWidth + x)]);
-        for (int circle = 0; circle < (IMAGE_BLOCK_SIZE * IMAGE_BLOCK_SIZE); circle += 1)
+        for (int circle = 0; circle < totalThreads; circle += 1)
         {
             if (circleInBlock[circle] == false)
             {
