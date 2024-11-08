@@ -16,6 +16,9 @@
 #include "sceneLoader.h"
 #include "util.h"
 
+#define SCAN_BLOCK_DIM   32 * 32  // needed by sharedMemExclusiveScan implementation
+#include "exclusiveScan.cu_inl"
+
 #define IMAGE_BLOCK_SIZE 32
 
 #ifdef DEBUG
@@ -501,7 +504,10 @@ __global__ void kernelRenderBlocks()
 
     // TODO - consider using a lock with an array of integers, such that each threads appends index of array with lock and writes a new circleId.
     __syncthreads();
-    __shared__ bool circleInBlock[IMAGE_BLOCK_SIZE * IMAGE_BLOCK_SIZE];
+    __shared__ uint circleInBlock[IMAGE_BLOCK_SIZE * IMAGE_BLOCK_SIZE];
+    __shared__ uint exclusiveScanRes[IMAGE_BLOCK_SIZE * IMAGE_BLOCK_SIZE];
+    __shared__ uint scratch[2 * IMAGE_BLOCK_SIZE * IMAGE_BLOCKSIZE];
+    __shared uint circleShortlist[IMAGE_BLOCK_SIZE * IMAGE_BLOCK_SIZE]
     int circleInBox_result;
     // Stride over all circles. This could be millions!
     for (int c = 0; c < cuConstRendererParams.numCircles; c += totalThreads)
@@ -514,24 +520,35 @@ __global__ void kernelRenderBlocks()
         circleInBox_result = circleInBox(p.x, p.y, rad, boxL * invWidth, boxR * invWidth, boxT * invHeight, boxB * invHeight);
         if (circleInBox_result == 1)
         {
-            circleInBlock[(threadLinearIndex)] = true;
+            circleInBlock[(threadLinearIndex)] = 1;
         }
         else
         {
-            circleInBlock[(threadLinearIndex)] = false;
+            circleInBlock[(threadLinearIndex)] = 0;
         }
         __syncthreads();
 
-        // __syncthreads();
+        sharedMemExclusiveScan(linearThreadIndex, circleInBox, exclusiveScanRes, scratch, IMAGE_BLOCK_SIZE * IMAGE_BLOCK_SIZE);
+        __syncthreads();
+
+        if (circleInBlock[threadLinearIndex] == 1) {
+            circleShortlist[exclusiveScanRes[threadLinearIndex]] = threadLinearIndex;
+        }
+
+        __syncthreads();
+        int numCirclesShortlist = exclusiveScanRes[IMAGE_BLOCK_SIZE * IMAGE_BLOCK_SIZE - 1] + circleinBlock[IMAGE_BLOCK_SIZE * IMAGE_BLOCK_SIZE - 1];
+
         // Map threads to pixels => (x,y) represents the pixel
         // Each pixel iterates through circles and shadePixels it. ShadePixel() takes care if the circle intersects with the pixel or not.
         float4 pixelColor = *(float4 *)(&cuConstRendererParams.imageData[4 * (y * imageWidth + x)]);
-        for (int circle = 0; circle < totalThreads; circle += 1)
-        {
-            if (circleInBlock[circle] == false)
-            {
-                continue;
-            }
+        // for (int circle = 0; circle < totalThreads; circle += 1)
+        // {
+        //     if (circleInBlock[circle] == false)
+        //     {
+        //         continue;
+        //     }
+        for (int i = 0; i < numCirclesShortlist; i++) {
+            int circle = circleShortlist[i];
 
             float2 pixelCenterNorm = make_float2(invWidth * (static_cast<float>(x) + 0.5f),
                                                  invHeight * (static_cast<float>(y) + 0.5f));
