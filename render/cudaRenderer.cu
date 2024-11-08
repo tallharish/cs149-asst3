@@ -506,8 +506,8 @@ __global__ void kernelRenderBlocks()
     __syncthreads();
     __shared__ uint circleInBlock[IMAGE_BLOCK_SIZE * IMAGE_BLOCK_SIZE];
     __shared__ uint exclusiveScanRes[IMAGE_BLOCK_SIZE * IMAGE_BLOCK_SIZE];
-    __shared__ uint scratch[2 * IMAGE_BLOCK_SIZE * IMAGE_BLOCKSIZE];
-    __shared uint circleShortlist[IMAGE_BLOCK_SIZE * IMAGE_BLOCK_SIZE]
+    __shared__ uint scratch[2 * IMAGE_BLOCK_SIZE * IMAGE_BLOCK_SIZE];
+    __shared__ uint circleShortlist[IMAGE_BLOCK_SIZE * IMAGE_BLOCK_SIZE];
     int circleInBox_result;
     // Stride over all circles. This could be millions!
     for (int c = 0; c < cuConstRendererParams.numCircles; c += totalThreads)
@@ -528,7 +528,7 @@ __global__ void kernelRenderBlocks()
         }
         __syncthreads();
 
-        sharedMemExclusiveScan(linearThreadIndex, circleInBox, exclusiveScanRes, scratch, IMAGE_BLOCK_SIZE * IMAGE_BLOCK_SIZE);
+        sharedMemExclusiveScan(threadLinearIndex, circleInBlock, exclusiveScanRes, scratch, IMAGE_BLOCK_SIZE * IMAGE_BLOCK_SIZE);
         __syncthreads();
 
         if (circleInBlock[threadLinearIndex] == 1) {
@@ -536,7 +536,7 @@ __global__ void kernelRenderBlocks()
         }
 
         __syncthreads();
-        int numCirclesShortlist = exclusiveScanRes[IMAGE_BLOCK_SIZE * IMAGE_BLOCK_SIZE - 1] + circleinBlock[IMAGE_BLOCK_SIZE * IMAGE_BLOCK_SIZE - 1];
+        int numCirclesShortlist = exclusiveScanRes[IMAGE_BLOCK_SIZE * IMAGE_BLOCK_SIZE - 1] + circleInBlock[IMAGE_BLOCK_SIZE * IMAGE_BLOCK_SIZE - 1];
 
         // Map threads to pixels => (x,y) represents the pixel
         // Each pixel iterates through circles and shadePixels it. ShadePixel() takes care if the circle intersects with the pixel or not.
