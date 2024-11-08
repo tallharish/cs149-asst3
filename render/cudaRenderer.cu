@@ -542,9 +542,6 @@ __global__ void kernelRenderBlocks()
 
         *(float4 *)(&cuConstRendererParams.imageData[4 * (y * imageWidth + x)]) = pixelColor;
         __syncthreads();
-
-        circleInBlock[(threadLinearIndex)] = false;
-        __syncthreads();
     }
 }
 
