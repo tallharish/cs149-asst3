@@ -501,7 +501,7 @@ __global__ void kernelRenderBlocks()
 
     // TODO - consider using a lock with an array of integers, such that each threads appends index of array with lock and writes a new circleId.
     __syncthreads();
-    __shared__ bool circleInBlock[10000];
+    __shared__ bool circleInBlock[IMAGE_BLOCK_SIZE * IMAGE_BLOCK_SIZE];
     int circleInBox_result;
     // Stride over all circles. This could be millions!
     for (int c = 0; c < cuConstRendererParams.numCircles; c += totalThreads)
