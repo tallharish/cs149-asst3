@@ -538,33 +538,31 @@ __global__ void kernelRenderBlocks()
 
         __syncthreads();
 
-        if (x >= imageWidth || y >= imageHeight)
+        if (x < imageWidth && y < imageHeight)
         {
-            __syncthreads();
-            continue;
+            int numCirclesShortlist = exclusiveScanRes[IMAGE_BLOCK_SIZE * IMAGE_BLOCK_SIZE - 1] + circleInBlock[IMAGE_BLOCK_SIZE * IMAGE_BLOCK_SIZE - 1];
+
+            // Map threads to pixels => (x,y) represents the pixel
+            // Each pixel iterates through circles and shadePixels it. ShadePixel() takes care if the circle intersects with the pixel or not.
+            float4 pixelColor = *(float4 *)(&cuConstRendererParams.imageData[4 * (y * imageWidth + x)]);
+            // for (int circle = 0; circle < totalThreads; circle += 1)
+            // {
+            //     if (circleInBlock[circle] == false)
+            //     {
+            //         continue;
+            //     }
+            for (int i = 0; i < numCirclesShortlist; i++) {
+                int circle = circleShortlist[i];
+
+                float2 pixelCenterNorm = make_float2(invWidth * (static_cast<float>(x) + 0.5f),
+                                                    invHeight * (static_cast<float>(y) + 0.5f));
+                float3 p = *(float3 *)(&cuConstRendererParams.position[3 * (c + circle)]); // NOTE - Position is 3x circle index.
+
+                shadePixel((c + circle), pixelCenterNorm, p, &pixelColor);
+            }
+
+            *(float4 *)(&cuConstRendererParams.imageData[4 * (y * imageWidth + x)]) = pixelColor;
         }
-        int numCirclesShortlist = exclusiveScanRes[IMAGE_BLOCK_SIZE * IMAGE_BLOCK_SIZE - 1] + circleInBlock[IMAGE_BLOCK_SIZE * IMAGE_BLOCK_SIZE - 1];
-
-        // Map threads to pixels => (x,y) represents the pixel
-        // Each pixel iterates through circles and shadePixels it. ShadePixel() takes care if the circle intersects with the pixel or not.
-        float4 pixelColor = *(float4 *)(&cuConstRendererParams.imageData[4 * (y * imageWidth + x)]);
-        // for (int circle = 0; circle < totalThreads; circle += 1)
-        // {
-        //     if (circleInBlock[circle] == false)
-        //     {
-        //         continue;
-        //     }
-        for (int i = 0; i < numCirclesShortlist; i++) {
-            int circle = circleShortlist[i];
-
-            float2 pixelCenterNorm = make_float2(invWidth * (static_cast<float>(x) + 0.5f),
-                                                 invHeight * (static_cast<float>(y) + 0.5f));
-            float3 p = *(float3 *)(&cuConstRendererParams.position[3 * (c + circle)]); // NOTE - Position is 3x circle index.
-
-            shadePixel((c + circle), pixelCenterNorm, p, &pixelColor);
-        }
-
-        *(float4 *)(&cuConstRendererParams.imageData[4 * (y * imageWidth + x)]) = pixelColor;
         __syncthreads();
     }
 }
@@ -593,29 +591,27 @@ __global__ void kernelRenderBlocksSimple()
     assert(boxT >= boxB);
 
     // Map threads to circles => determine which thread map to which circle => append to a local bitmap
-    int threadLinearIndex = threadIdx.y * blockDim.x + threadIdx.x;
-    int totalThreads = blockDim.x * blockDim.y;
+    // int threadLinearIndex = threadIdx.y * blockDim.x + threadIdx.x;
+    // int totalThreads = blockDim.x * blockDim.y;
 
-    if (x >= imageWidth || y >= imageHeight)
+    if (x < imageWidth && y < imageHeight)
     {
-        return;
-    }
+        for (int circle = 0; circle < cuConstRendererParams.numCircles; circle += 1)
+        {
+            // if (circleInBlock[circle] == false)
+            // {
+            //     continue;
+            // }
 
-    for (int circle = 0; circle < cuConstRendererParams.numCircles; circle += 1)
-    {
-        // if (circleInBlock[circle] == false)
-        // {
-        //     continue;
-        // }
+            float2 pixelCenterNorm = make_float2(invWidth * (static_cast<float>(x) + 0.5f),
+                                                invHeight * (static_cast<float>(y) + 0.5f));
+            float3 p = *(float3 *)(&cuConstRendererParams.position[3 * circle]); // NOTE - Position is 3x circle index.
 
-        float2 pixelCenterNorm = make_float2(invWidth * (static_cast<float>(x) + 0.5f),
-                                             invHeight * (static_cast<float>(y) + 0.5f));
-        float3 p = *(float3 *)(&cuConstRendererParams.position[3 * circle]); // NOTE - Position is 3x circle index.
+        
 
-    
-
-        float4 *imgPtr = (float4 *)(&cuConstRendererParams.imageData[4 * (y * imageWidth + x)]);
-        shadePixel(circle, pixelCenterNorm, p, imgPtr);
+            float4 *imgPtr = (float4 *)(&cuConstRendererParams.imageData[4 * (y * imageWidth + x)]);
+            shadePixel(circle, pixelCenterNorm, p, imgPtr);
+        }
     }
 
     __syncthreads();
