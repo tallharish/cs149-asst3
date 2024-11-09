@@ -16,7 +16,7 @@
 #include "sceneLoader.h"
 #include "util.h"
 
-#define SCAN_BLOCK_DIM   32 * 32  // needed by sharedMemExclusiveScan implementation
+#define SCAN_BLOCK_DIM 32 * 32 // needed by sharedMemExclusiveScan implementation
 #include "exclusiveScan.cu_inl"
 
 #define IMAGE_BLOCK_SIZE 32
@@ -426,7 +426,7 @@ shadePixel(int circleIndex, float2 pixelCenter, float3 p, float4 *imagePtr)
 // pixel from the circle.  Update of the image is done in this
 // function.  Called by kernelRenderCircles()
 __device__ __inline__ void
-shadePixelBlocks(int circleIndex, float2 pixelCenter, float3 p, float4 *imagePtr, SceneName scene)
+shadePixelBlocks(int circleIndex, float2 pixelCenter, float3 p, float4 *imagePtr, SceneName scene, float3 rgb_else)
 {
 
     float diffX = p.x - pixelCenter.x;
@@ -468,8 +468,7 @@ shadePixelBlocks(int circleIndex, float2 pixelCenter, float3 p, float4 *imagePtr
     else
     {
         // simple: each circle has an assigned color
-        int index3 = 3 * circleIndex;
-        rgb = *(float3 *)&(cuConstRendererParams.color[index3]);
+        rgb = rgb_else;
         alpha = .5f;
     }
 
@@ -581,15 +580,17 @@ __global__ void kernelRenderBlocks(SceneName scene)
     __shared__ uint circleShortlist[IMAGE_BLOCK_SIZE * IMAGE_BLOCK_SIZE];
     int circleInBox_result;
 
-    __shared__ float3 circlePosition[IMAGE_BLOCK_SIZE * IMAGE_BLOCK_SIZE]; //Cache the .position[] in block
+    __shared__ float3 circlePosition[IMAGE_BLOCK_SIZE * IMAGE_BLOCK_SIZE]; // Cache the .position[] in block
+    __shared__ float3 rgb_circle;
 
     // Stride over all circles. This could be millions!
     for (int c = 0; c < cuConstRendererParams.numCircles; c += totalThreads)
     {
         // Get Circle dimensions.
-        if (c + threadLinearIndex < cuConstRendererParams.numCircles) {
+        if (c + threadLinearIndex < cuConstRendererParams.numCircles)
+        {
             circlePosition[threadLinearIndex] = *(float3 *)(&cuConstRendererParams.position[3 * (c + threadLinearIndex)]); // NOTE - Position is 3x index.
-            float rad = cuConstRendererParams.radius[(c + threadLinearIndex)];                    // NOTE - Radius is at index.
+            float rad = cuConstRendererParams.radius[(c + threadLinearIndex)];                                             // NOTE - Radius is at index.
 
             circleInBox_result = circleInBox(circlePosition[threadLinearIndex].x, circlePosition[threadLinearIndex].y, rad, boxL * invWidth, boxR * invWidth, boxT * invHeight, boxB * invHeight);
             if (circleInBox_result == 1)
@@ -606,7 +607,8 @@ __global__ void kernelRenderBlocks(SceneName scene)
         sharedMemExclusiveScan(threadLinearIndex, circleInBlock, exclusiveScanRes, scratch, IMAGE_BLOCK_SIZE * IMAGE_BLOCK_SIZE);
         __syncthreads();
 
-        if (circleInBlock[threadLinearIndex] == 1) {
+        if (circleInBlock[threadLinearIndex] == 1)
+        {
             circleShortlist[exclusiveScanRes[threadLinearIndex]] = threadLinearIndex;
         }
 
@@ -619,20 +621,22 @@ __global__ void kernelRenderBlocks(SceneName scene)
             // Map threads to pixels => (x,y) represents the pixel
             // Each pixel iterates through circles and shadePixels it. ShadePixel() takes care if the circle intersects with the pixel or not.
             float4 pixelColor = *(float4 *)(&cuConstRendererParams.imageData[4 * (y * imageWidth + x)]);
+
             // for (int circle = 0; circle < totalThreads; circle += 1)
             // {
             //     if (circleInBlock[circle] == false)
             //     {
             //         continue;
             //     }
-            for (int i = 0; i < numCirclesShortlist; i++) {
+            for (int i = 0; i < numCirclesShortlist; i++)
+            {
                 int circle = circleShortlist[i];
 
                 float2 pixelCenterNorm = make_float2(invWidth * (static_cast<float>(x) + 0.5f),
-                                                    invHeight * (static_cast<float>(y) + 0.5f));
+                                                     invHeight * (static_cast<float>(y) + 0.5f));
                 float3 p = circlePosition[circle]; // NOTE - Position is 3x circle index.
-
-                shadePixelBlocks((c + circle), pixelCenterNorm, p, &pixelColor, scene);
+                rgb_circle = *(float3 *)&(cuConstRendererParams.color[3 * (c + circle)]);
+                shadePixelBlocks((c + circle), pixelCenterNorm, p, &pixelColor, scene, rgb_circle);
             }
 
             *(float4 *)(&cuConstRendererParams.imageData[4 * (y * imageWidth + x)]) = pixelColor;
@@ -678,10 +682,8 @@ __global__ void kernelRenderBlocksSimple()
             // }
 
             float2 pixelCenterNorm = make_float2(invWidth * (static_cast<float>(x) + 0.5f),
-                                                invHeight * (static_cast<float>(y) + 0.5f));
+                                                 invHeight * (static_cast<float>(y) + 0.5f));
             float3 p = *(float3 *)(&cuConstRendererParams.position[3 * circle]); // NOTE - Position is 3x circle index.
-
-        
 
             float4 *imgPtr = (float4 *)(&cuConstRendererParams.imageData[4 * (y * imageWidth + x)]);
             shadePixel(circle, pixelCenterNorm, p, imgPtr);
@@ -923,14 +925,14 @@ void CudaRenderer::render()
         kernelRenderBlocks<<<numBlocks, threadPerBlock>>>(sceneName);
         cudaCheckError(cudaDeviceSynchronize());
     }
-    else if (numCircles == 3) {
+    else if (numCircles == 3)
+    {
         int imageWidth = image->width;
         int imageHeight = image->height;
         dim3 threadPerBlock(IMAGE_BLOCK_SIZE, IMAGE_BLOCK_SIZE);
         dim3 numBlocks((imageWidth + IMAGE_BLOCK_SIZE - 1) / IMAGE_BLOCK_SIZE, (imageHeight + IMAGE_BLOCK_SIZE - 1) / IMAGE_BLOCK_SIZE);
         kernelRenderBlocksSimple<<<numBlocks, threadPerBlock>>>();
         cudaCheckError(cudaDeviceSynchronize());
-        
     }
     else
     {
