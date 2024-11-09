@@ -509,15 +509,18 @@ __global__ void kernelRenderBlocks()
     __shared__ uint scratch[2 * IMAGE_BLOCK_SIZE * IMAGE_BLOCK_SIZE];
     __shared__ uint circleShortlist[IMAGE_BLOCK_SIZE * IMAGE_BLOCK_SIZE];
     int circleInBox_result;
+
+    __shared__ float3 circlePosition[IMAGE_BLOCK_SIZE * IMAGE_BLOCK_SIZE]; //Cache the .position[] in block
+
     // Stride over all circles. This could be millions!
     for (int c = 0; c < cuConstRendererParams.numCircles; c += totalThreads)
     {
         // Get Circle dimensions.
         if (c + threadLinearIndex < cuConstRendererParams.numCircles) {
-            float3 p = *(float3 *)(&cuConstRendererParams.position[3 * (c + threadLinearIndex)]); // NOTE - Position is 3x index.
+            circlePosition[threadLinearIndex] = *(float3 *)(&cuConstRendererParams.position[3 * (c + threadLinearIndex)]); // NOTE - Position is 3x index.
             float rad = cuConstRendererParams.radius[(c + threadLinearIndex)];                    // NOTE - Radius is at index.
 
-            circleInBox_result = circleInBox(p.x, p.y, rad, boxL * invWidth, boxR * invWidth, boxT * invHeight, boxB * invHeight);
+            circleInBox_result = circleInBox(circlePosition[threadLinearIndex].x, circlePosition[threadLinearIndex].y, rad, boxL * invWidth, boxR * invWidth, boxT * invHeight, boxB * invHeight);
             if (circleInBox_result == 1)
             {
                 circleInBlock[(threadLinearIndex)] = 1;
@@ -556,7 +559,7 @@ __global__ void kernelRenderBlocks()
 
                 float2 pixelCenterNorm = make_float2(invWidth * (static_cast<float>(x) + 0.5f),
                                                     invHeight * (static_cast<float>(y) + 0.5f));
-                float3 p = *(float3 *)(&cuConstRendererParams.position[3 * (c + circle)]); // NOTE - Position is 3x circle index.
+                float3 p = circlePosition[circle]; // NOTE - Position is 3x circle index.
 
                 shadePixel((c + circle), pixelCenterNorm, p, &pixelColor);
             }
