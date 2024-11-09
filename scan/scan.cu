@@ -42,6 +42,34 @@ static inline int nextPow2(int n) {
 // Also, as per the comments in cudaScan(), you can implement an
 // "in-place" scan, since the timing harness makes a copy of input and
 // places it in result
+
+__global__ void upsweep_kernel(int* result, int two_d, int two_dplus1, int N) {
+    int my_idx = blockIdx.x * blockDim.x + threadIdx.x;
+    int i = my_idx * two_dplus1;
+    //TODO: create fast shared memory?
+    if (i < N) {
+        result[i + two_dplus1 - 1] += result[i + two_d - 1];
+    }
+
+}
+
+__global__ void downsweep_kernel(int* result, int two_d, int two_dplus1, int N) {
+    int my_idx = blockIdx.x * blockDim.x + threadIdx.x;
+    int i = my_idx * two_dplus1;
+    if (i < N) {
+        int t = result[i + two_d - 1];
+        result[i + two_d - 1] = result[i + two_dplus1 - 1];
+        result[i + two_dplus1 -1 ] += t;
+    }
+
+}
+
+__global__ void set_last_zero_kernel(int* result, int N) {
+    if (blockIdx.x == 0 && threadIdx.x == 0) {
+	result[N - 1] = 0;
+    }
+}
+
 void exclusive_scan(int* input, int N, int* result)
 {
 
@@ -53,6 +81,57 @@ void exclusive_scan(int* input, int N, int* result)
     // on the CPU.  Your implementation will need to make multiple calls
     // to CUDA kernel functions (that you must write) to implement the
     // scan.
+
+    // memmove(result, input, N * sizeof(int));
+
+    // int* device_result;
+    // cudaError_t malloc_return_code = cudaMalloc(&device_result, N * sizeof(int));
+    // assert(malloc_return_code == cudaSuccess);
+
+    // cudaMemcpy(device_result, result, N * sizeof(int), cudaMemcpyHostToDevice);
+    N = nextPow2(N);
+    int block_size = 32;
+
+    // upsweep phase
+    for (int two_d = 1;  two_d <= N / 2; two_d *= 2) {
+        int two_dplus1 = 2 * two_d;
+        
+        int num_index = (N + 1) / two_dplus1;
+        int grid_size = (num_index + block_size - 1) / block_size;
+        
+        upsweep_kernel<<<grid_size, block_size>>>(result, two_d, two_dplus1, N);
+        
+        cudaDeviceSynchronize();
+        cudaError_t kernel_return_code = cudaGetLastError();
+        if (kernel_return_code != cudaSuccess) {
+            printf("%s\n", cudaGetErrorString(kernel_return_code));
+        }
+    }
+
+    // cudaMemcpy(result, device_result, N * sizeof(int), cudaMemcpyDeviceToHost);
+    
+    set_last_zero_kernel<<<1, 1>>>(result, N);
+    cudaDeviceSynchronize();
+
+    // cudaMemcpy(device_result, result, N * sizeof(int), cudaMemcpyHostToDevice);
+
+    // downsweep phase
+    for (int two_d = N/2; two_d >= 1; two_d /= 2) {
+        int two_dplus1 = 2 * two_d;
+        
+        int num_index = (N + 1) / two_dplus1;
+        int grid_size = (num_index + block_size - 1) / block_size;
+
+        downsweep_kernel<<<grid_size, block_size>>>(result, two_d, two_dplus1, N);
+        cudaDeviceSynchronize();
+        cudaError_t kernel_return_code = cudaGetLastError();
+        if (kernel_return_code != cudaSuccess) {
+            printf("%s\n", cudaGetErrorString(kernel_return_code));
+        }
+
+    }
+    // cudaMemcpy(result, device_result, N * sizeof(int), cudaMemcpyDeviceToHost);
+    // cudaFree(device_result);
 
 
 }
@@ -140,6 +219,25 @@ double cudaScanThrust(int* inarray, int* end, int* resultarray) {
     return overallDuration; 
 }
 
+__global__ void next_equal_kernel(int* input, int N, int* output, int* output_copy) {
+    int my_idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (my_idx < N - 1) {
+        output[my_idx] = (input[my_idx] == input[my_idx + 1]);
+        output_copy[my_idx] = (input[my_idx] == input[my_idx + 1]);
+    }
+    else {
+        output[my_idx] = 0;
+        output_copy[my_idx] = 0;
+    }
+}
+
+__global__ void get_repeat_index_kernel(int* next_equal, int* next_equal_prefix_s, int* output) {
+    int my_idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (next_equal[my_idx] == 1) {
+        output[next_equal_prefix_s[my_idx]] = my_idx;
+    }
+
+}
 
 // find_repeats --
 //
@@ -160,8 +258,31 @@ int find_repeats(int* device_input, int length, int* device_output) {
     // exclusive_scan function with them. However, your implementation
     // must ensure that the results of find_repeats are correct given
     // the actual array length.
+    int block_size = 32;
 
-    return 0; 
+    int rounded_length = nextPow2(length);
+    int grid_size = (rounded_length + block_size - 1) / block_size;
+    
+    int* device_next_equal;
+    int* device_next_equal_prefix_s;
+    cudaMalloc(&device_next_equal, sizeof(int) * rounded_length);
+    cudaMalloc(&device_next_equal_prefix_s, sizeof(int) * rounded_length);
+
+    next_equal_kernel<<<grid_size, block_size>>>(device_input, length, device_next_equal, device_next_equal_prefix_s);
+    cudaDeviceSynchronize();
+
+    exclusive_scan(device_next_equal, length, device_next_equal_prefix_s);
+
+    get_repeat_index_kernel<<<grid_size, block_size>>>(device_next_equal, device_next_equal_prefix_s, device_output);
+    cudaDeviceSynchronize();
+
+    cudaFree(device_next_equal);
+
+    int output_length;
+    cudaMemcpy(&output_length, device_next_equal_prefix_s + length - 1, 1 * sizeof(int), cudaMemcpyDeviceToHost);
+    cudaFree(device_next_equal_prefix_s);
+
+    return output_length; 
 }
 
 
