@@ -131,7 +131,7 @@ void saxpyCuda(int N, float alpha, float *xarray, float *yarray, float *resultar
     }
 
     double overallDuration = endTime - startTime;
-    printf("Effective BW by CUDA saxpy: %.3f ms\t\t[%.3f GB/s]\n", 1000.f * overallDuration, GBPerSec(totalBytes, overallDuration));
+    printf("Total Runtime: %.3f ms\t\t Effective BW by CUDA saxpy - [%.3f GB/s]\n", 1000.f * overallDuration, GBPerSec(totalBytes, overallDuration));
     double kernelDuration = kernelStopTime - kernelStartTime;
     printf("Time in CUDA Kernel: %.3f ms\t\t\n", 1000.f * kernelDuration);
 
